@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "demo-genesis"
-  }
+    "default": "jk-ai-app-builder"
+  },
+  "targets": {},
+  "etags": {}
 }
