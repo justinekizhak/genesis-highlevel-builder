@@ -1,0 +1,23 @@
+{
+  "name": "genesis-functions",
+  "private": true,
+  "version": "0.1.0",
+  "main": "lib/index.js",
+  "engines": { "node": "22" },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "serve": "pnpm build && firebase emulators:start --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.4.0",
+    "firebase-functions": "^6.4.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.23",
+    "@types/node": "^24.3.0",
+    "typescript": "~5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

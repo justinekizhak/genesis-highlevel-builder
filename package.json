@@ -1,0 +1,12 @@
+{
+  "name": "genesis-highlevel-builder",
+  "private": true,
+  "scripts": {
+    "install:all": "pnpm --dir frontend install && pnpm --dir functions install",
+    "build": "pnpm --dir frontend build && pnpm --dir functions build",
+    "test": "pnpm --dir frontend test && pnpm --dir functions test",
+    "dev:frontend": "pnpm --dir frontend dev",
+    "dev:emulators": "firebase emulators:start --only auth,firestore,functions",
+    "deploy": "firebase deploy"
+  }
+}
