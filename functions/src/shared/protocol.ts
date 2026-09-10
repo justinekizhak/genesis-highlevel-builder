@@ -1,5 +1,5 @@
 export type GenerationEvent =
-  | { type: 'generation_started'; generationId: string }
+  | { type: 'generation_started'; generationId: string; provider?: 'openai' | 'mock'; model?: string }
   | { type: 'token'; delta: string }
   | { type: 'file_start'; path: string; language: string }
   | { type: 'file_delta'; path: string; delta: string }

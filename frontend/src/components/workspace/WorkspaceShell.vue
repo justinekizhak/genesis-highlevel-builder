@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import {
@@ -23,13 +23,16 @@ import Textarea from '@/components/ui/Textarea.vue'
 import { buildSrcdoc } from '@/lib/srcdoc'
 import { generateApplication, initialDemoFiles, loadApplicationState, saveLocalApplicationState } from '@/services/generation'
 import { useAuthStore } from '@/stores/auth'
+import { useHighLevelStore } from '@/stores/highlevel'
 import { useProjectsStore } from '@/stores/projects'
 import type { ChatMessage, GeneratedFile, GenerationEvent } from '@/types/generation'
+import { highLevelOperationSet, type HighLevelOperation, type HighLevelParameters } from '@/types/highlevel'
 
 const route = useRoute()
 const router = useRouter()
 const projectsStore = useProjectsStore()
 const authStore = useAuthStore()
+const highLevelStore = useHighLevelStore()
 const files = ref<Record<string, GeneratedFile>>(structuredClone(initialDemoFiles))
 const activePath = ref('app.js')
 const messages = ref<ChatMessage[]>([
@@ -43,12 +46,16 @@ const prompt = ref('')
 const isGenerating = ref(false)
 const generationError = ref('')
 const previewDocument = ref(buildSrcdoc(files.value))
+const previewFrame = ref<HTMLIFrameElement>()
+const bridgeError = ref('')
 const currentGenerationId = ref<string>()
 const currentSnapshotId = ref<string>()
+const activeModel = ref(import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Model pending' : 'Local mock')
 const mobilePanel = ref<'chat' | 'code' | 'preview'>('chat')
 const streamSourceLabel = import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Firebase stream' : 'Local mock stream'
 let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
+const bridgeRequests = new Set<string>()
 
 const activeFile = computed(() => files.value[activePath.value])
 const fileList = computed(() => Object.values(files.value))
@@ -64,10 +71,60 @@ function cloneFiles(source: Record<string, GeneratedFile>) {
   return Object.fromEntries(Object.entries(source).map(([path, file]) => [path, { ...file }]))
 }
 
+function renderPreview() {
+  previewDocument.value = buildSrcdoc(files.value, { enableHighLevelBridge: highLevelStore.connection.connected })
+}
+
+function parseBridgeRequest(event: MessageEvent) {
+  if (event.source !== previewFrame.value?.contentWindow) return
+  const data = event.data as Record<string, unknown> | null
+  if (!data || data.channel !== 'genesis.highlevel.v1' || data.direction !== 'request') return
+  if (typeof data.requestId !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(data.requestId)) return
+  if (typeof data.operation !== 'string' || !highLevelOperationSet.has(data.operation)) return
+  const raw = data.parameters
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return
+  const entries = Object.entries(raw)
+  if (entries.length > 20 || entries.some(([key, value]) => (
+    !/^[A-Za-z][A-Za-z0-9]*$/.test(key)
+    || !['string', 'number', 'undefined'].includes(typeof value)
+    || (typeof value === 'string' && value.length > 500)
+  ))) return
+  return {
+    requestId: data.requestId,
+    operation: data.operation as HighLevelOperation,
+    parameters: raw as HighLevelParameters,
+  }
+}
+
+async function handleHighLevelBridge(event: MessageEvent) {
+  const request = parseBridgeRequest(event)
+  if (!request || bridgeRequests.has(request.requestId) || bridgeRequests.size >= 8) return
+  bridgeRequests.add(request.requestId)
+  bridgeError.value = ''
+  try {
+    const data = await highLevelStore.execute(request.operation, request.parameters)
+    previewFrame.value?.contentWindow?.postMessage({
+      channel: 'genesis.highlevel.v1', direction: 'response', requestId: request.requestId, ok: true, data,
+    }, '*')
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'HighLevel request failed.'
+    bridgeError.value = message
+    previewFrame.value?.contentWindow?.postMessage({
+      channel: 'genesis.highlevel.v1', direction: 'response', requestId: request.requestId, ok: false, error: message,
+    }, '*')
+  } finally {
+    bridgeRequests.delete(request.requestId)
+  }
+}
+
 onMounted(async () => {
   if (!projectsStore.projects.length) projectsStore.load()
+  window.addEventListener('message', handleHighLevelBridge)
   try {
-    const state = await loadApplicationState(projectId.value, await authStore.getIdToken())
+    const [state] = await Promise.all([
+      loadApplicationState(projectId.value, await authStore.getIdToken()),
+      highLevelStore.loadStatus(),
+    ])
     if (state?.files) {
       files.value = Object.fromEntries(Object.entries(state.files).map(([path, content]) => [path, {
         path,
@@ -75,7 +132,7 @@ onMounted(async () => {
         language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html',
       }]))
       activePath.value = Object.keys(files.value)[0] ?? 'app.js'
-      previewDocument.value = buildSrcdoc(files.value)
+      renderPreview()
       currentSnapshotId.value = state.snapshotId
     }
     if (state?.messages.length) messages.value = state.messages
@@ -83,6 +140,9 @@ onMounted(async () => {
     generationError.value = error instanceof Error ? error.message : 'Could not load this project.'
   }
 })
+
+onBeforeUnmount(() => window.removeEventListener('message', handleHighLevelBridge))
+watch(() => highLevelStore.connection.connected, renderPreview)
 
 function updateActiveFile(content: string) {
   if (!activeFile.value || isGenerating.value) return
@@ -93,6 +153,7 @@ function handleEvent(event: GenerationEvent) {
   switch (event.type) {
     case 'generation_started':
       currentGenerationId.value = event.generationId
+      activeModel.value = event.provider === 'openai' ? (event.model ?? 'OpenAI') : 'Local mock'
       files.value = {}
       break
     case 'token': {
@@ -115,7 +176,7 @@ function handleEvent(event: GenerationEvent) {
       currentSnapshotId.value = event.snapshotId
       break
     case 'complete':
-      previewDocument.value = buildSrcdoc(files.value)
+      renderPreview()
       mobilePanel.value = 'preview'
       if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
         saveLocalApplicationState(projectId.value, {
@@ -172,7 +233,7 @@ function stopGeneration() {
 }
 
 function refreshPreview() {
-  previewDocument.value = buildSrcdoc(files.value)
+  renderPreview()
 }
 </script>
 
@@ -325,6 +386,7 @@ function refreshPreview() {
             <span>Preview updates when generation completes</span>
           </div>
           <iframe
+            ref="previewFrame"
             title="Generated HighLevel application preview"
             sandbox="allow-scripts allow-forms"
             :srcdoc="previewDocument"
@@ -336,7 +398,9 @@ function refreshPreview() {
     <footer class="statusbar">
       <span>{{ fileList.length }} files</span>
       <span v-if="currentSnapshotId">Snapshot ready</span>
-      <span>{{ streamSourceLabel }}</span>
+      <span>{{ highLevelStore.connection.connected ? 'HighLevel live' : 'HighLevel demo data' }}</span>
+      <span v-if="bridgeError" class="error-message">{{ bridgeError }}</span>
+      <span>{{ activeModel }} · {{ streamSourceLabel }}</span>
     </footer>
   </main>
 </template>

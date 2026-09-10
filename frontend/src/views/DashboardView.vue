@@ -5,6 +5,7 @@ import {
   IconArrowUpRight,
   IconBraces,
   IconChevronRight,
+  IconCpu,
   IconLogout,
   IconPlus,
   IconPlugConnected,
@@ -75,23 +76,35 @@ async function signOut() {
       <p v-if="route.query.oauth === 'connected'" class="oauth-result success">HighLevel connected successfully.</p>
       <p v-if="route.query.oauth === 'failed'" class="oauth-result error">HighLevel connection failed. Check the function logs and try again.</p>
 
-      <section class="connection-row">
-        <div class="connection-copy">
-          <IconPlugConnected v-if="highLevel.connection.connected" :size="20" />
-          <IconPlugConnectedX v-else :size="20" />
-          <div>
-            <strong>{{ highLevel.connection.connected ? highLevel.connection.locationName : 'HighLevel is not connected' }}</strong>
-            <span>{{ highLevel.connection.connected ? 'Contacts, conversations, and calendars are available.' : 'Connect one location to enable real CRM data.' }}</span>
+      <div class="integration-list">
+        <section class="connection-row">
+          <div class="connection-copy">
+            <IconPlugConnected v-if="highLevel.connection.connected" :size="20" />
+            <IconPlugConnectedX v-else :size="20" />
+            <div>
+              <strong>{{ highLevel.connection.connected ? highLevel.connection.locationName : 'HighLevel is not connected' }}</strong>
+              <span>{{ highLevel.connection.connected ? 'Contacts, conversations, and calendars are available to generated apps.' : 'Connect one location to enable real CRM data.' }}</span>
+            </div>
           </div>
-        </div>
-        <Button
-          variant="secondary"
-          :disabled="!highLevel.canConnect || highLevel.loading || highLevel.connection.connected"
-          @click="highLevel.connect"
-        >
-          {{ highLevel.loading ? 'Checking' : highLevel.connection.connected ? 'Connected' : 'Connect HighLevel' }}
-        </Button>
-      </section>
+          <Button
+            variant="secondary"
+            :disabled="!highLevel.canConnect || highLevel.loading || highLevel.connection.connected"
+            @click="highLevel.connect"
+          >
+            {{ highLevel.loading ? 'Checking' : highLevel.connection.connected ? 'Connected' : 'Connect HighLevel' }}
+          </Button>
+        </section>
+        <section class="connection-row">
+          <div class="connection-copy">
+            <IconCpu :size="20" />
+            <div>
+              <strong>{{ highLevel.llm.configured ? highLevel.llm.model : 'AI model is not configured' }}</strong>
+              <span>{{ highLevel.llm.configured ? 'OpenAI structured generation is ready.' : 'Set the Firebase OPENAI_API_KEY secret to enable live generation.' }}</span>
+            </div>
+          </div>
+          <Badge>{{ highLevel.llm.configured ? 'Ready' : 'Mock mode' }}</Badge>
+        </section>
+      </div>
       <p v-if="highLevel.error" class="form-error connection-error">{{ highLevel.error }}</p>
 
       <section class="project-section">

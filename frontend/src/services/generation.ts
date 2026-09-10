@@ -93,7 +93,7 @@ const wait = (milliseconds: number, signal: AbortSignal) =>
 
 async function runLocalDemo({ signal, onEvent }: GenerateOptions) {
   const generationId = crypto.randomUUID()
-  onEvent({ type: 'generation_started', generationId })
+  onEvent({ type: 'generation_started', generationId, provider: 'mock' })
   onEvent({ type: 'token', delta: 'I will build a focused contact dashboard with search and upcoming appointment context.' })
 
   for (const [path, content] of Object.entries(demoFiles)) {

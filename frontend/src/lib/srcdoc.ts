@@ -4,7 +4,36 @@ function escapeClosingScript(value: string) {
   return value.replaceAll('</script>', '<\\/script>')
 }
 
-export function buildSrcdoc(files: Record<string, GeneratedFile>) {
+const highLevelBridge = `<script>
+(() => {
+  const channel = 'genesis.highlevel.v1';
+  let sequence = 0;
+  const pending = new Map();
+  const invoke = (operation, parameters = {}) => new Promise((resolve, reject) => {
+    const requestId = String(++sequence) + '-' + Date.now();
+    pending.set(requestId, { resolve, reject });
+    window.parent.postMessage({ channel, direction: 'request', requestId, operation, parameters }, '*');
+  });
+  window.addEventListener('message', (event) => {
+    if (event.source !== window.parent || event.data?.channel !== channel || event.data?.direction !== 'response') return;
+    const request = pending.get(event.data.requestId);
+    if (!request) return;
+    pending.delete(event.data.requestId);
+    event.data.ok ? request.resolve(event.data.data) : request.reject(new Error(event.data.error || 'HighLevel request failed.'));
+  });
+  window.genesis = Object.freeze({ highlevel: Object.freeze({
+    contacts: Object.freeze({ list: (parameters) => invoke('contacts.list', parameters) }),
+    conversations: Object.freeze({
+      list: (parameters) => invoke('conversations.list', parameters),
+      messages: (parameters) => invoke('conversations.messages', parameters),
+    }),
+    calendars: Object.freeze({ list: (parameters) => invoke('calendars.list', parameters) }),
+    appointments: Object.freeze({ list: (parameters) => invoke('appointments.list', parameters) }),
+  }) });
+})();
+<\/script>`
+
+export function buildSrcdoc(files: Record<string, GeneratedFile>, options: { enableHighLevelBridge?: boolean } = {}) {
   const markup = files['index.html']?.content ?? '<main><p>No index.html generated yet.</p></main>'
   const styles = files['styles.css']?.content ?? ''
   const script = files['app.js']?.content ?? ''
@@ -19,6 +48,7 @@ export function buildSrcdoc(files: Record<string, GeneratedFile>) {
 </head>
 <body>
 ${markup}
+${options.enableHighLevelBridge ? highLevelBridge : ''}
 <script>${escapeClosingScript(script)}<\/script>
 </body>
 </html>`

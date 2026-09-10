@@ -18,6 +18,8 @@ The current implementation includes the workspace, authentication boundary, proj
 - Persistent owner-scoped project creation and soft-delete support
 - HighLevel OAuth state validation, server-only token storage, and refresh leasing
 - An allowlisted HighLevel gateway for Contacts, Conversations, and Calendars
+- A sandbox-to-parent RPC bridge so generated apps can read HighLevel data without receiving credentials
+- Runtime connection status for both HighLevel and the configured OpenAI model
 
 ## Local development
 
@@ -54,6 +56,16 @@ firebase functions:secrets:set HL_CLIENT_SECRET
 
 Required values are documented in `.env.example`. Register the deployed `hlAuthCallback` function URL as the marketplace app redirect URI.
 
+The generated iframe cannot call HighLevel directly. It can request only these read-only bridge operations:
+
+- `contacts.list`
+- `conversations.list`
+- `conversations.messages`
+- `calendars.list`
+- `appointments.list`
+
+Every request is source-checked in the browser, authenticated with Firebase, allowlisted in the Function, and executed with the server-side HighLevel token.
+
 ## OpenAI configuration
 
 The API key is read only by the generation function and is never sent to the Vue application or generated preview:
@@ -62,7 +74,9 @@ The API key is read only by the generation function and is never sent to the Vue
 firebase functions:secrets:set OPENAI_API_KEY
 ```
 
-`OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in the Firebase environment. If the secret is absent, the authenticated backend uses the deterministic demo generator so emulator development still works.
+`OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in the Firebase environment. During local emulator development, an absent secret falls back to the deterministic demo generator. Set the secret before deploying the generation function.
+
+Copy `functions/.env.example` to the Firebase project-specific environment file and fill in the non-secret values. Do not put either API secret in a dotenv file.
 
 ## Next milestone
 

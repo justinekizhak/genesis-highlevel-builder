@@ -5,7 +5,7 @@ import { onRequest } from 'firebase-functions/v2/https'
 import { z } from 'zod'
 import { buildApplicationEvents, generatedApplicationSchema } from './generate/application.js'
 import { mockProjectFiles } from './generate/mock-project.js'
-import { generateWithOpenAi, openAiApiKey } from './generate/openai.js'
+import { generateWithOpenAi, openAiApiKey, openAiModel } from './generate/openai.js'
 import { loadProjectState, persistGeneration, requireOwnedProject } from './generate/persistence.js'
 import {
   applicationBaseUrl,
@@ -83,7 +83,12 @@ export const generateApp = onRequest(
       response.flushHeaders()
 
       const generationId = crypto.randomUUID()
-      response.write(serializeSse({ type: 'generation_started', generationId }))
+      response.write(serializeSse({
+        type: 'generation_started',
+        generationId,
+        provider: useOpenAi ? 'openai' : 'mock',
+        model: useOpenAi ? openAiModel.value() : undefined,
+      }))
       const application = useOpenAi
         ? await generateWithOpenAi(input.prompt, input.currentFiles)
         : generatedApplicationSchema.parse({
@@ -208,6 +213,30 @@ export const hlConnectionStatus = onRequest({ region: 'us-central1', cors: false
     httpError(response, cause)
   }
 })
+
+export const integrationStatus = onRequest(
+  { region: 'us-central1', cors: false, secrets: [openAiApiKey] },
+  async (request, response) => {
+    applyCors(request, response)
+    if (request.method === 'OPTIONS') return void response.status(204).end()
+    if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
+    try {
+      const user = await requireFirebaseUser(request)
+      const connection = await getFirestore().collection('highlevelConnections').doc(user.uid).get()
+      response.json({
+        llm: { configured: Boolean(openAiApiKey.value()), model: openAiModel.value() },
+        highLevel: connection.exists ? {
+          connected: true,
+          locationId: connection.get('locationId'),
+          locationName: connection.get('locationName') ?? 'Connected location',
+          connectedAt: connection.get('connectedAt')?.toDate?.().toISOString(),
+        } : { connected: false },
+      })
+    } catch (cause) {
+      httpError(response, cause)
+    }
+  },
+)
 
 export const hlProxy = onRequest(
   { region: 'us-central1', cors: false, secrets: [highLevelClientSecret], timeoutSeconds: 60 },

@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { firebaseEnabled } from '@/services/firebase'
+import type { HighLevelOperation, HighLevelParameters } from '@/types/highlevel'
 import { useAuthStore } from './auth'
 
 type ConnectionStatus = {
@@ -10,8 +11,19 @@ type ConnectionStatus = {
   connectedAt?: string
 }
 
+type ModelStatus = {
+  configured: boolean
+  model: string
+}
+
+type IntegrationStatus = {
+  highLevel: ConnectionStatus
+  llm: ModelStatus
+}
+
 export const useHighLevelStore = defineStore('highlevel', () => {
   const connection = ref<ConnectionStatus>({ connected: false })
+  const llm = ref<ModelStatus>({ configured: false, model: 'gpt-5.4-mini' })
   const loading = ref(false)
   const error = ref('')
   const functionsBase = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
@@ -39,7 +51,9 @@ export const useHighLevelStore = defineStore('highlevel', () => {
     loading.value = true
     error.value = ''
     try {
-      connection.value = await request('hlConnectionStatus') as ConnectionStatus
+      const status = await request('integrationStatus') as IntegrationStatus
+      connection.value = status.highLevel
+      llm.value = status.llm
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not check the HighLevel connection.'
     } finally {
@@ -59,5 +73,13 @@ export const useHighLevelStore = defineStore('highlevel', () => {
     }
   }
 
-  return { connection, loading, error, canConnect, loadStatus, connect }
+  async function execute(operation: HighLevelOperation, parameters: HighLevelParameters = {}) {
+    const result = await request('hlProxy', {
+      method: 'POST',
+      body: JSON.stringify({ operation, parameters }),
+    }) as { data: unknown }
+    return result.data
+  }
+
+  return { connection, llm, loading, error, canConnect, loadStatus, connect, execute }
 })
