@@ -4,12 +4,15 @@ AI-powered HighLevel app builder built with Vue 3, TypeScript, shadcn-vue conven
 
 ## Current milestone
 
-The current implementation includes the workspace, authentication boundary, projects, and HighLevel connection layer:
+The current implementation includes the workspace, authentication boundary, project persistence, AI generation, and HighLevel connection layer:
 
 - Three-panel chat, code editor, and sandboxed preview workspace
 - Semantic SSE protocol with file boundaries and completion events
-- Local in-browser stream fallback for frontend-only development
-- Firebase Functions v2 mock streaming endpoint
+- Local in-browser generation fallback for frontend-only development
+- Authenticated Firebase Functions generation endpoint using the OpenAI Responses API
+- Strict structured-output validation for `index.html`, `styles.css`, and `app.js`
+- Versioned Firestore snapshots and persisted user/assistant messages
+- Last-good-file restoration when generation is cancelled or fails
 - Firestore project ownership rules and server-only HighLevel token boundary
 - Firebase email/password sign-in and sign-up with session restoration
 - Persistent owner-scoped project creation and soft-delete support
@@ -51,6 +54,16 @@ firebase functions:secrets:set HL_CLIENT_SECRET
 
 Required values are documented in `.env.example`. Register the deployed `hlAuthCallback` function URL as the marketplace app redirect URI.
 
+## OpenAI configuration
+
+The API key is read only by the generation function and is never sent to the Vue application or generated preview:
+
+```bash
+firebase functions:secrets:set OPENAI_API_KEY
+```
+
+`OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in the Firebase environment. If the secret is absent, the authenticated backend uses the deterministic demo generator so emulator development still works.
+
 ## Next milestone
 
-Replace the mock generator with an authenticated LLM stream, validate file operations, and persist messages, staged files, and snapshots.
+Add snapshot history/restore controls, then connect the generated-app bridge to the allowlisted HighLevel gateway.

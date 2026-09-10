@@ -21,13 +21,15 @@ import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import { buildSrcdoc } from '@/lib/srcdoc'
-import { generateApplication, initialDemoFiles } from '@/services/generation'
+import { generateApplication, initialDemoFiles, loadApplicationState, saveLocalApplicationState } from '@/services/generation'
+import { useAuthStore } from '@/stores/auth'
 import { useProjectsStore } from '@/stores/projects'
 import type { ChatMessage, GeneratedFile, GenerationEvent } from '@/types/generation'
 
 const route = useRoute()
 const router = useRouter()
 const projectsStore = useProjectsStore()
+const authStore = useAuthStore()
 const files = ref<Record<string, GeneratedFile>>(structuredClone(initialDemoFiles))
 const activePath = ref('app.js')
 const messages = ref<ChatMessage[]>([
@@ -46,6 +48,7 @@ const currentSnapshotId = ref<string>()
 const mobilePanel = ref<'chat' | 'code' | 'preview'>('chat')
 const streamSourceLabel = import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Firebase stream' : 'Local mock stream'
 let controller: AbortController | undefined
+let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
 
 const activeFile = computed(() => files.value[activePath.value])
 const fileList = computed(() => Object.values(files.value))
@@ -57,8 +60,28 @@ const statusLabel = computed(() => {
 const projectId = computed(() => String(route.params.projectId ?? 'local-demo'))
 const projectTitle = computed(() => projectsStore.projects.find((project) => project.id === projectId.value)?.name ?? 'Untitled project')
 
-onMounted(() => {
+function cloneFiles(source: Record<string, GeneratedFile>) {
+  return Object.fromEntries(Object.entries(source).map(([path, file]) => [path, { ...file }]))
+}
+
+onMounted(async () => {
   if (!projectsStore.projects.length) projectsStore.load()
+  try {
+    const state = await loadApplicationState(projectId.value, await authStore.getIdToken())
+    if (state?.files) {
+      files.value = Object.fromEntries(Object.entries(state.files).map(([path, content]) => [path, {
+        path,
+        content,
+        language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html',
+      }]))
+      activePath.value = Object.keys(files.value)[0] ?? 'app.js'
+      previewDocument.value = buildSrcdoc(files.value)
+      currentSnapshotId.value = state.snapshotId
+    }
+    if (state?.messages.length) messages.value = state.messages
+  } catch (error) {
+    generationError.value = error instanceof Error ? error.message : 'Could not load this project.'
+  }
 })
 
 function updateActiveFile(content: string) {
@@ -94,9 +117,18 @@ function handleEvent(event: GenerationEvent) {
     case 'complete':
       previewDocument.value = buildSrcdoc(files.value)
       mobilePanel.value = 'preview'
+      if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
+        saveLocalApplicationState(projectId.value, {
+          snapshotId: currentSnapshotId.value,
+          files: Object.fromEntries(Object.entries(files.value).map(([path, file]) => [path, file.content])),
+          messages: messages.value,
+        })
+      }
+      filesBeforeGeneration = undefined
       break
     case 'error':
       generationError.value = event.message
+      if (filesBeforeGeneration) files.value = filesBeforeGeneration
       break
   }
 }
@@ -108,12 +140,15 @@ async function submitPrompt(suggestion?: string) {
   generationError.value = ''
   isGenerating.value = true
   messages.value.push({ id: crypto.randomUUID(), role: 'user', content: value })
+  filesBeforeGeneration = cloneFiles(files.value)
   controller = new AbortController()
 
   try {
     await generateApplication({
       prompt: value,
       projectId: projectId.value,
+      currentFiles: filesBeforeGeneration ?? {},
+      idToken: await authStore.getIdToken(),
       signal: controller.signal,
       onEvent: handleEvent,
     })
@@ -121,6 +156,7 @@ async function submitPrompt(suggestion?: string) {
     if ((error as DOMException).name !== 'AbortError') {
       generationError.value = error instanceof Error ? error.message : 'Generation failed unexpectedly.'
     }
+    if (filesBeforeGeneration) files.value = filesBeforeGeneration
   } finally {
     isGenerating.value = false
     controller = undefined
@@ -130,6 +166,8 @@ async function submitPrompt(suggestion?: string) {
 
 function stopGeneration() {
   controller?.abort()
+  if (filesBeforeGeneration) files.value = filesBeforeGeneration
+  filesBeforeGeneration = undefined
   isGenerating.value = false
 }
 

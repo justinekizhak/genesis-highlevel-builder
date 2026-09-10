@@ -1,8 +1,10 @@
-import type { GenerationEvent } from '@/types/generation'
+import type { ChatMessage, GeneratedFile, GenerationEvent } from '@/types/generation'
 
 type GenerateOptions = {
   prompt: string
   projectId: string
+  currentFiles: Record<string, GeneratedFile>
+  idToken?: string
   signal: AbortSignal
   onEvent: (event: GenerationEvent) => void
 }
@@ -97,9 +99,9 @@ async function runLocalDemo({ signal, onEvent }: GenerateOptions) {
   for (const [path, content] of Object.entries(demoFiles)) {
     const language = path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html'
     onEvent({ type: 'file_start', path, language })
-    const chunkSize = 72
+    const chunkSize = 480
     for (let index = 0; index < content.length; index += chunkSize) {
-      await wait(14, signal)
+      await wait(8, signal)
       onEvent({ type: 'file_delta', path, delta: content.slice(index, index + chunkSize) })
     }
     onEvent({ type: 'file_complete', path, size: content.length })
@@ -121,10 +123,15 @@ function parseSseBlock(block: string): GenerationEvent | undefined {
 }
 
 async function runRemote(options: GenerateOptions, baseUrl: string) {
-  const response = await fetch(`${baseUrl}/generateMock`, {
+  if (!options.idToken) throw new Error('Sign in again before generating.')
+  const response = await fetch(`${baseUrl}/generateApp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: options.prompt, projectId: options.projectId }),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.idToken}` },
+    body: JSON.stringify({
+      prompt: options.prompt,
+      projectId: options.projectId,
+      currentFiles: Object.fromEntries(Object.entries(options.currentFiles).map(([path, file]) => [path, file.content])),
+    }),
     signal: options.signal,
   })
   if (!response.ok || !response.body) throw new Error(`Generation request failed (${response.status})`)
@@ -152,6 +159,32 @@ async function runRemote(options: GenerateOptions, baseUrl: string) {
 export function generateApplication(options: GenerateOptions) {
   const baseUrl = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
   return baseUrl ? runRemote(options, baseUrl) : runLocalDemo(options)
+}
+
+export type ProjectApplicationState = {
+  snapshotId?: string
+  files: Record<string, string> | null
+  messages: ChatMessage[]
+}
+
+const localStateKey = (projectId: string) => `genesis.demo.state.${projectId}`
+
+export async function loadApplicationState(projectId: string, idToken?: string): Promise<ProjectApplicationState | null> {
+  const baseUrl = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
+  if (!baseUrl) {
+    const saved = localStorage.getItem(localStateKey(projectId))
+    return saved ? JSON.parse(saved) as ProjectApplicationState : null
+  }
+  if (!idToken) throw new Error('Sign in again to load this project.')
+  const url = new URL(`${baseUrl}/projectState`)
+  url.searchParams.set('projectId', projectId)
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } })
+  if (!response.ok) throw new Error(`Could not load project state (${response.status})`)
+  return response.json() as Promise<ProjectApplicationState>
+}
+
+export function saveLocalApplicationState(projectId: string, state: ProjectApplicationState) {
+  localStorage.setItem(localStateKey(projectId), JSON.stringify(state))
 }
 
 export const initialDemoFiles = Object.fromEntries(

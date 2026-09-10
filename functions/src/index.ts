@@ -3,7 +3,10 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { onRequest } from 'firebase-functions/v2/https'
 import { z } from 'zod'
-import { buildMockEvents } from './generate/mock-events.js'
+import { buildApplicationEvents, generatedApplicationSchema } from './generate/application.js'
+import { mockProjectFiles } from './generate/mock-project.js'
+import { generateWithOpenAi, openAiApiKey } from './generate/openai.js'
+import { loadProjectState, persistGeneration, requireOwnedProject } from './generate/persistence.js'
 import {
   applicationBaseUrl,
   highLevelClientId,
@@ -22,6 +25,11 @@ initializeApp()
 const generateRequestSchema = z.object({
   prompt: z.string().trim().min(3).max(4_000),
   projectId: z.string().trim().min(1).max(128),
+  currentFiles: z.object({
+    'index.html': z.string().max(100_000).optional(),
+    'styles.css': z.string().max(100_000).optional(),
+    'app.js': z.string().max(100_000).optional(),
+  }).strict().default({}),
 })
 
 const proxyRequestSchema = z.object({
@@ -43,8 +51,8 @@ export const healthz = onRequest({ region: 'us-central1', cors: false }, (reques
   response.json({ status: 'ok', service: 'genesis-functions', timestamp: new Date().toISOString() })
 })
 
-export const generateMock = onRequest(
-  { region: 'us-central1', timeoutSeconds: 120, memory: '256MiB', cors: false },
+export const generateApp = onRequest(
+  { region: 'us-central1', timeoutSeconds: 300, memory: '512MiB', cors: false, secrets: [openAiApiKey] },
   async (request, response) => {
     applyCors(request, response)
     if (request.method === 'OPTIONS') {
@@ -56,33 +64,73 @@ export const generateMock = onRequest(
       return
     }
 
-    const parsed = generateRequestSchema.safeParse(request.body)
-    if (!parsed.success) {
-      response.status(400).json({ error: 'Invalid generation request', details: parsed.error.flatten() })
-      return
+    try {
+      const user = await requireFirebaseUser(request)
+      const input = generateRequestSchema.parse(request.body)
+      await requireOwnedProject(user.uid, input.projectId)
+      const useOpenAi = Boolean(openAiApiKey.value())
+      logger.info('Starting application generation', {
+        projectId: input.projectId,
+        promptLength: input.prompt.length,
+        provider: useOpenAi ? 'openai' : 'mock',
+      })
+
+      response.status(200)
+      response.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+      response.setHeader('Cache-Control', 'no-cache, no-transform')
+      response.setHeader('Connection', 'keep-alive')
+      response.setHeader('X-Accel-Buffering', 'no')
+      response.flushHeaders()
+
+      const generationId = crypto.randomUUID()
+      response.write(serializeSse({ type: 'generation_started', generationId }))
+      const application = useOpenAi
+        ? await generateWithOpenAi(input.prompt, input.currentFiles)
+        : generatedApplicationSchema.parse({
+          summary: 'OPENAI_API_KEY is not configured, so Genesis generated the safe demo application.',
+          files: Object.entries(mockProjectFiles).map(([path, content]) => ({ path, content })),
+        })
+      const built = buildApplicationEvents(application, 160, { generationId })
+      await persistGeneration({
+        uid: user.uid,
+        projectId: input.projectId,
+        prompt: input.prompt,
+        application,
+        generationId,
+        snapshotId: built.snapshotId,
+        provider: useOpenAi ? 'openai' : 'mock',
+      })
+
+      for (const event of built.events.slice(1)) {
+        if (request.destroyed || response.destroyed) break
+        response.write(serializeSse(event))
+      }
+      response.end()
+    } catch (cause) {
+      logger.error('Application generation failed', cause)
+      if (!response.headersSent) {
+        httpError(response, cause)
+        return
+      }
+      const message = cause instanceof Error ? cause.message : 'Application generation failed.'
+      response.write(serializeSse({ type: 'error', code: 'GENERATION_FAILED', message, recoverable: true }))
+      response.end()
     }
-
-    logger.info('Starting mock generation', {
-      projectId: parsed.data.projectId,
-      promptLength: parsed.data.prompt.length,
-    })
-
-    response.status(200)
-    response.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
-    response.setHeader('Cache-Control', 'no-cache, no-transform')
-    response.setHeader('Connection', 'keep-alive')
-    response.setHeader('X-Accel-Buffering', 'no')
-    response.flushHeaders()
-
-    const events = buildMockEvents()
-    for (const event of events) {
-      if (request.destroyed || response.destroyed) break
-      response.write(serializeSse(event))
-      await new Promise((resolve) => setTimeout(resolve, event.type === 'file_delta' ? 12 : 55))
-    }
-    response.end()
   },
 )
+
+export const projectState = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const projectId = z.string().trim().min(1).max(128).parse(request.query.projectId)
+    response.json(await loadProjectState(user.uid, projectId))
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
 
 export const hlOAuthStart = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
   applyCors(request, response)
