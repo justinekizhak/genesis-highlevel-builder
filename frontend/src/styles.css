@@ -183,6 +183,18 @@ button, textarea, input { font: inherit; }
 .project-dialog { display: grid; width: min(100%, 480px); gap: 9px; padding: 24px; border: 1px solid #45433b; border-radius: 10px; background: #181815; box-shadow: 0 24px 80px rgb(7 7 6 / .55); }
 .dialog-heading { display: flex; align-items: start; justify-content: space-between; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.snapshot-backdrop { position: fixed; z-index: 20; inset: 0; background: rgb(8 8 7 / .76); backdrop-filter: blur(5px); }
+.snapshot-dialog { position: fixed; z-index: 21; inset: 0 0 0 auto; display: flex; flex-direction: column; width: min(100%, 460px); height: 100%; padding: 22px; border-left: 1px solid #45433b; background: #181815; box-shadow: -24px 0 80px rgb(7 7 6 / .55); }
+.snapshot-dialog h2 { margin: 0; font-size: 22px; letter-spacing: -.035em; }
+.snapshot-dialog .dialog-heading p { margin: 5px 0 20px; color: var(--muted); font-size: 12px; }
+.snapshot-empty { margin: auto; color: var(--muted); font-size: 12px; text-align: center; }
+.snapshot-list { min-height: 0; overflow-y: auto; border-top: 1px solid var(--border); }
+.snapshot-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 16px 2px; border-bottom: 1px solid var(--border); }
+.snapshot-row > div { min-width: 0; }
+.snapshot-meta { display: flex; align-items: center; gap: 8px; }
+.snapshot-meta strong { font-size: 12px; }
+.snapshot-row p { max-width: 310px; margin: 7px 0 4px; overflow: hidden; color: #aaa69b; font-size: 11px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.snapshot-row > div > span { color: var(--muted); font: 9px "IBM Plex Mono", ui-monospace, monospace; }
 @keyframes skeleton { to { background: #22211d; } }
 
 @media (max-width: 780px) {

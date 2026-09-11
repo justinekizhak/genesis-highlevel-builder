@@ -39,7 +39,11 @@ async function createProject() {
   if (!name.value.trim()) return
   creating.value = true
   try {
-    const project = await projectsStore.create(name.value.trim(), description.value.trim())
+    const project = await projectsStore.create(
+      name.value.trim(),
+      description.value.trim(),
+      highLevel.connection.locationId ?? null,
+    )
     createOpen.value = false
     await router.push(`/projects/${project.id}`)
   } finally {

@@ -6,7 +6,16 @@ import { z } from 'zod'
 import { buildApplicationEvents, generatedApplicationSchema } from './generate/application.js'
 import { mockProjectFiles } from './generate/mock-project.js'
 import { generateWithOpenAi, openAiApiKey, openAiModel } from './generate/openai.js'
-import { loadProjectState, persistGeneration, requireOwnedProject } from './generate/persistence.js'
+import {
+  listProjectSnapshots,
+  loadProjectState,
+  persistGeneration,
+  persistPartialGeneration,
+  requireOwnedProject,
+  restoreProjectSnapshot,
+  saveProjectFiles,
+} from './generate/persistence.js'
+import { StructuredApplicationStream } from './generate/structured-stream.js'
 import {
   applicationBaseUrl,
   highLevelClientId,
@@ -37,6 +46,20 @@ const proxyRequestSchema = z.object({
   parameters: z.record(z.string(), z.union([z.string(), z.number(), z.undefined()])).default({}),
 })
 
+const projectFilesSchema = z.object({
+  projectId: z.string().trim().min(1).max(128),
+  files: z.object({
+    'index.html': z.string().max(100_000).optional(),
+    'styles.css': z.string().max(100_000).optional(),
+    'app.js': z.string().max(100_000).optional(),
+  }).strict(),
+})
+
+const restoreSnapshotSchema = z.object({
+  projectId: z.string().trim().min(1).max(128),
+  snapshotId: z.string().trim().min(1).max(128),
+})
+
 function httpError(response: Parameters<typeof applyCors>[1], cause: unknown) {
   const message = cause instanceof Error ? cause.message : 'Unexpected server error.'
   response.status(cause instanceof AuthenticationError ? 401 : 400).json({ error: message })
@@ -54,6 +77,16 @@ export const healthz = onRequest({ region: 'us-central1', cors: false }, (reques
 export const generateApp = onRequest(
   { region: 'us-central1', timeoutSeconds: 300, memory: '512MiB', cors: false, secrets: [openAiApiKey] },
   async (request, response) => {
+    let partialGeneration: {
+      uid: string
+      projectId: string
+      prompt: string
+      generationId: string
+      provider: 'openai' | 'mock'
+      parser: StructuredApplicationStream
+      currentFiles: Record<string, string>
+    } | undefined
+    let generationPersisted = false
     applyCors(request, response)
     if (request.method === 'OPTIONS') {
       response.status(204).end()
@@ -83,46 +116,129 @@ export const generateApp = onRequest(
       response.flushHeaders()
 
       const generationId = crypto.randomUUID()
+      const abortController = new AbortController()
+      response.on('close', () => {
+        if (!response.writableEnded) abortController.abort()
+      })
+      const heartbeat = setInterval(() => {
+        if (!response.destroyed) response.write(': heartbeat\n\n')
+      }, 15_000)
       response.write(serializeSse({
         type: 'generation_started',
         generationId,
         provider: useOpenAi ? 'openai' : 'mock',
         model: useOpenAi ? openAiModel.value() : undefined,
       }))
-      const application = useOpenAi
-        ? await generateWithOpenAi(input.prompt, input.currentFiles)
-        : generatedApplicationSchema.parse({
-          summary: 'OPENAI_API_KEY is not configured, so Genesis generated the safe demo application.',
-          files: Object.entries(mockProjectFiles).map(([path, content]) => ({ path, content })),
+      try {
+        const streamParser = new StructuredApplicationStream()
+        partialGeneration = {
+          uid: user.uid,
+          projectId: input.projectId,
+          prompt: input.prompt,
+          generationId,
+          provider: useOpenAi ? 'openai' : 'mock',
+          parser: streamParser,
+          currentFiles: input.currentFiles,
+        }
+        const application = useOpenAi
+          ? await generateWithOpenAi(input.prompt, input.currentFiles, abortController.signal, (delta) => {
+            for (const event of streamParser.push(delta)) {
+              if (!response.destroyed) response.write(serializeSse(event))
+            }
+          })
+          : generatedApplicationSchema.parse({
+            summary: 'OPENAI_API_KEY is not configured, so Genesis generated the safe demo application.',
+            files: Object.entries(mockProjectFiles).map(([path, content]) => ({ path, content })),
+          })
+        const built = buildApplicationEvents(application, 160, { generationId })
+        await persistGeneration({
+          uid: user.uid,
+          projectId: input.projectId,
+          prompt: input.prompt,
+          application,
+          generationId,
+          snapshotId: built.snapshotId,
+          provider: useOpenAi ? 'openai' : 'mock',
         })
-      const built = buildApplicationEvents(application, 160, { generationId })
-      await persistGeneration({
-        uid: user.uid,
-        projectId: input.projectId,
-        prompt: input.prompt,
-        application,
-        generationId,
-        snapshotId: built.snapshotId,
-        provider: useOpenAi ? 'openai' : 'mock',
-      })
+        generationPersisted = true
 
-      for (const event of built.events.slice(1)) {
-        if (request.destroyed || response.destroyed) break
-        response.write(serializeSse(event))
+        if (!useOpenAi) {
+          for (const event of built.events.slice(1, -2)) {
+            if (!response.destroyed) response.write(serializeSse(event))
+          }
+        }
+        if (!response.destroyed) {
+          response.write(serializeSse({ type: 'snapshot_created', snapshotId: built.snapshotId }))
+          response.write(serializeSse({ type: 'complete', generationId }))
+          response.end()
+        }
+      } finally {
+        clearInterval(heartbeat)
       }
-      response.end()
     } catch (cause) {
       logger.error('Application generation failed', cause)
+      if (!generationPersisted && partialGeneration) {
+        await persistPartialGeneration({
+          uid: partialGeneration.uid,
+          projectId: partialGeneration.projectId,
+          prompt: partialGeneration.prompt,
+          generationId: partialGeneration.generationId,
+          provider: partialGeneration.provider,
+          summary: partialGeneration.parser.partialSummary(),
+          files: { ...partialGeneration.currentFiles, ...partialGeneration.parser.partialFiles() },
+        }).catch((persistenceError) => logger.error('Could not preserve partial generation', persistenceError))
+      }
       if (!response.headersSent) {
         httpError(response, cause)
         return
       }
+      if (response.destroyed) return
       const message = cause instanceof Error ? cause.message : 'Application generation failed.'
       response.write(serializeSse({ type: 'error', code: 'GENERATION_FAILED', message, recoverable: true }))
       response.end()
     }
   },
 )
+
+export const projectSnapshots = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const projectId = z.string().trim().min(1).max(128).parse(request.query.projectId)
+    response.json({ snapshots: await listProjectSnapshots(user.uid, projectId) })
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
+
+export const saveFiles = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const input = projectFilesSchema.parse(request.body)
+    await saveProjectFiles(user.uid, input.projectId, input.files)
+    response.json({ ok: true })
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
+
+export const restoreSnapshot = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const input = restoreSnapshotSchema.parse(request.body)
+    response.json(await restoreProjectSnapshot(user.uid, input.projectId, input.snapshotId))
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
 
 export const projectState = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
   applyCors(request, response)
@@ -184,6 +300,16 @@ export const hlAuthCallback = onRequest(
       })
       const tokens = await exchangeAuthorizationCode(code)
       await saveConnection(uid, tokens)
+      const connectedProjects = await db.collection('projects').where('ownerId', '==', uid).get()
+      const projectBatch = db.batch()
+      let projectUpdates = 0
+      for (const project of connectedProjects.docs) {
+        if (!project.get('deletedAt')) {
+          projectBatch.update(project.ref, { locationId: tokens.locationId })
+          projectUpdates += 1
+        }
+      }
+      if (projectUpdates) await projectBatch.commit()
       const success = new URL('/projects', applicationBaseUrl.value())
       success.searchParams.set('oauth', 'connected')
       response.redirect(success.toString())

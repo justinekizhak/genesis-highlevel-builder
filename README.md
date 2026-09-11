@@ -7,12 +7,13 @@ AI-powered HighLevel app builder built with Vue 3, TypeScript, shadcn-vue conven
 The current implementation includes the workspace, authentication boundary, project persistence, AI generation, and HighLevel connection layer:
 
 - Three-panel chat, code editor, and sandboxed preview workspace
-- Semantic SSE protocol with file boundaries and completion events
+- Upstream OpenAI Responses streaming translated into semantic SSE file events
 - Local in-browser generation fallback for frontend-only development
 - Authenticated Firebase Functions generation endpoint using the OpenAI Responses API
 - Strict structured-output validation for `index.html`, `styles.css`, and `app.js`
-- Versioned Firestore snapshots and persisted user/assistant messages
-- Last-good-file restoration when generation is cancelled or fails
+- Versioned Firestore snapshots, history, restore, and persisted user/assistant messages
+- Partial-generation preservation plus a recoverable backup before every restore
+- Debounced persistence for manual Monaco edits
 - Firestore project ownership rules and server-only HighLevel token boundary
 - Firebase email/password sign-in and sign-up with session restoration
 - Persistent owner-scoped project creation and soft-delete support
@@ -47,6 +48,14 @@ Set `VITE_FUNCTIONS_BASE_URL=http://127.0.0.1:5001/jk-ai-app-builder/us-central1
 pnpm run build
 pnpm run test
 ```
+
+## Live URLs
+
+- Firebase Hosting: https://jk-ai-app-builder.web.app
+- Cloud Functions base URL: https://us-central1-jk-ai-app-builder.cloudfunctions.net
+- OAuth callback: https://us-central1-jk-ai-app-builder.cloudfunctions.net/hlAuthCallback
+
+After deployment, verify the Hosting URL and the `/healthz` Function before recording the demo.
 
 ## HighLevel OAuth configuration
 
@@ -93,6 +102,35 @@ Restrict the Workload Identity provider to the exact GitHub repository and `main
 
 The non-secret production Functions parameters are stored in `functions/.env.jk-ai-app-builder`. Local overrides and secrets remain gitignored.
 
-## Next milestone
+## Architecture decisions
 
-Add snapshot history/restore controls, then connect the generated-app bridge to the allowlisted HighLevel gateway.
+- The browser authenticates streaming POST requests with Firebase ID tokens using `fetch`; native `EventSource` cannot send the required authorization header and request body.
+- OpenAI structured-output deltas are parsed server-side into `token`, `file_start`, `file_delta`, `file_complete`, snapshot, completion, and error events.
+- Only three fixed preview files are accepted, which keeps validation, storage, and sandbox execution bounded.
+- Current editable files are stored separately from immutable generation snapshots.
+- Snapshot restore creates a backup first, so restoring never discards the current manual state irreversibly.
+- Generated applications run in a CSP-restricted iframe with no direct network access.
+- HighLevel access crosses an allowlisted `postMessage` bridge and authenticated server proxy; OAuth credentials never reach generated code.
+- HighLevel refresh tokens are rotated behind a short Firestore lease to prevent concurrent refresh races.
+- Failed or cancelled generations keep visible partial output and persist a partial snapshot when possible.
+- Local mock mode mirrors streaming and snapshot behavior so the core workflow can be demonstrated without secrets.
+
+## What I would improve
+
+- Add emulator-backed integration tests for authenticated SSE, snapshots, OAuth, and Firestore rules.
+- Add generation diffs and selective file regeneration for cheaper iterative refinement.
+- Add per-user rate limits and usage telemetry around generation and proxy endpoints.
+- Expand the HighLevel bridge with carefully confirmed write operations and calendar availability.
+- Split Monaco and Firebase into lazy-loaded chunks to reduce the initial JavaScript bundle.
+
+## Deployment notes
+
+Create the Firebase project, enable Email/Password Authentication and Firestore, bind `OPENAI_API_KEY` and `HL_CLIENT_SECRET` in Secret Manager, populate the documented non-secret parameters, then deploy Hosting, Functions, rules, and indexes. Register the deployed `hlAuthCallback` URL in the HighLevel marketplace app and authorize the Firebase Hosting domain in Firebase Authentication.
+
+The included GitHub Actions workflow uses Workload Identity Federation and deploys pushes to `main` after the build and test job passes. A manual `pnpm run deploy` is also available for a configured Firebase CLI session.
+
+## Submission checklist
+
+- Add the public GitHub repository URL.
+- Deploy and verify the URLs above.
+- Record the five-minute Loom walkthrough and add its URL here and to the submission email.

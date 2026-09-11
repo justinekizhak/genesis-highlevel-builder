@@ -37,25 +37,128 @@ export async function persistGeneration(input: {
     provider: input.provider,
     createdAt: now,
   })
+  for (const file of input.application.files) {
+    batch.set(projectReference.collection('files').doc(file.path), {
+      path: file.path,
+      content: file.content,
+      updatedAt: now,
+    })
+  }
   batch.update(projectReference, { latestSnapshotId: input.snapshotId, updatedAt: FieldValue.serverTimestamp() })
+  await batch.commit()
+}
+
+export async function persistPartialGeneration(input: {
+  projectId: string
+  prompt: string
+  generationId: string
+  summary: string
+  files: Record<string, string>
+  uid: string
+  provider: 'openai' | 'mock'
+}) {
+  const projectReference = await requireOwnedProject(input.uid, input.projectId)
+  const batch = getFirestore().batch()
+  const now = Timestamp.now()
+  const summary = input.summary || 'Generation stopped before the response completed.'
+  const messages = projectReference.collection('messages')
+  batch.set(messages.doc(), { role: 'user', content: input.prompt, generationId: input.generationId, createdAt: now })
+  batch.set(messages.doc(), {
+    role: 'assistant',
+    content: summary,
+    generationId: input.generationId,
+    interrupted: true,
+    createdAt: Timestamp.fromMillis(now.toMillis() + 1),
+  })
+  if (Object.keys(input.files).length) {
+    batch.set(projectReference.collection('snapshots').doc(), {
+      generationId: input.generationId,
+      prompt: input.prompt,
+      summary,
+      files: input.files,
+      provider: input.provider,
+      kind: 'partial',
+      createdAt: now,
+    })
+  }
   await batch.commit()
 }
 
 export async function loadProjectState(uid: string, projectId: string) {
   const projectReference = await requireOwnedProject(uid, projectId)
-  const [project, messages] = await Promise.all([
+  const [project, messages, currentFiles] = await Promise.all([
     projectReference.get(),
     projectReference.collection('messages').orderBy('createdAt', 'asc').limitToLast(80).get(),
+    projectReference.collection('files').get(),
   ])
   const snapshotId = project.get('latestSnapshotId') as string | undefined
   const snapshot = snapshotId ? await projectReference.collection('snapshots').doc(snapshotId).get() : undefined
   return {
     snapshotId: snapshot?.id,
-    files: snapshot?.get('files') ?? null,
+    files: currentFiles.empty
+      ? snapshot?.get('files') ?? null
+      : Object.fromEntries(currentFiles.docs.map((document) => [document.get('path'), document.get('content')])),
     messages: messages.docs.map((document) => ({
       id: document.id,
       role: document.get('role'),
       content: document.get('content'),
     })),
   }
+}
+
+export async function listProjectSnapshots(uid: string, projectId: string) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  const snapshots = await projectReference.collection('snapshots').orderBy('createdAt', 'desc').limit(50).get()
+  return snapshots.docs.map((document) => ({
+    id: document.id,
+    generationId: document.get('generationId'),
+    prompt: document.get('prompt') ?? '',
+    summary: document.get('summary') ?? '',
+    provider: document.get('provider') ?? 'unknown',
+    kind: document.get('kind') ?? 'generation',
+    fileCount: Object.keys(document.get('files') ?? {}).length,
+    createdAt: document.get('createdAt')?.toDate?.().toISOString() ?? new Date(0).toISOString(),
+  }))
+}
+
+export async function saveProjectFiles(uid: string, projectId: string, files: Record<string, string>) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  const batch = getFirestore().batch()
+  const now = Timestamp.now()
+  for (const [path, content] of Object.entries(files)) {
+    batch.set(projectReference.collection('files').doc(path), { path, content, updatedAt: now })
+  }
+  batch.update(projectReference, { updatedAt: FieldValue.serverTimestamp() })
+  await batch.commit()
+}
+
+export async function restoreProjectSnapshot(uid: string, projectId: string, snapshotId: string) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  const [snapshot, currentFiles] = await Promise.all([
+    projectReference.collection('snapshots').doc(snapshotId).get(),
+    projectReference.collection('files').get(),
+  ])
+  if (!snapshot.exists) throw new Error('Snapshot was not found.')
+  const files = snapshot.get('files') as Record<string, string> | undefined
+  if (!files || !Object.keys(files).length) throw new Error('Snapshot contains no files.')
+  const batch = getFirestore().batch()
+  const now = Timestamp.now()
+  const current = Object.fromEntries(currentFiles.docs.map((document) => [document.get('path'), document.get('content')]))
+  const backupReference = projectReference.collection('snapshots').doc()
+  if (Object.keys(current).length) {
+    batch.set(backupReference, {
+      prompt: '',
+      summary: 'Backup created automatically before restoring a snapshot.',
+      files: current,
+      provider: 'manual',
+      kind: 'backup',
+      createdAt: now,
+    })
+  }
+  for (const [path, content] of Object.entries(files)) {
+    batch.set(projectReference.collection('files').doc(path), { path, content, updatedAt: now })
+  }
+  batch.update(projectReference, { latestSnapshotId: snapshotId, updatedAt: FieldValue.serverTimestamp() })
+  await batch.commit()
+  return { snapshotId, files, backupSnapshotId: Object.keys(current).length ? backupReference.id : undefined }
 }

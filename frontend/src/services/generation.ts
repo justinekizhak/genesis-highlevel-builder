@@ -1,4 +1,4 @@
-import type { ChatMessage, GeneratedFile, GenerationEvent } from '@/types/generation'
+import type { ChatMessage, GeneratedFile, GenerationEvent, ProjectSnapshot } from '@/types/generation'
 
 type GenerateOptions = {
   prompt: string
@@ -112,7 +112,7 @@ async function runLocalDemo({ signal, onEvent }: GenerateOptions) {
   onEvent({ type: 'complete', generationId })
 }
 
-function parseSseBlock(block: string): GenerationEvent | undefined {
+export function parseSseBlock(block: string): GenerationEvent | undefined {
   const data = block
     .split('\n')
     .filter((line) => line.startsWith('data:'))
@@ -120,6 +120,36 @@ function parseSseBlock(block: string): GenerationEvent | undefined {
     .join('\n')
   if (!data) return
   return JSON.parse(data) as GenerationEvent
+}
+
+export async function consumeGenerationStream(response: Response, onEvent: (event: GenerationEvent) => void) {
+  if (!response.body) throw new Error('Generation response contained no stream.')
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  let sawTerminal = false
+  while (true) {
+    const { done, value = '' } = await reader.read()
+    buffer += value.replaceAll('\r\n', '\n')
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary >= 0) {
+      const event = parseSseBlock(buffer.slice(0, boundary))
+      if (event) {
+        onEvent(event)
+        if (event.type === 'complete' || event.type === 'error') sawTerminal = true
+      }
+      buffer = buffer.slice(boundary + 2)
+      boundary = buffer.indexOf('\n\n')
+    }
+    if (done) break
+  }
+  if (buffer.trim()) {
+    const event = parseSseBlock(buffer)
+    if (event) {
+      onEvent(event)
+      if (event.type === 'complete' || event.type === 'error') sawTerminal = true
+    }
+  }
+  if (!sawTerminal) throw new Error('Generation stream ended before completion. Partial output has been preserved.')
 }
 
 async function runRemote(options: GenerateOptions, baseUrl: string) {
@@ -134,26 +164,12 @@ async function runRemote(options: GenerateOptions, baseUrl: string) {
     }),
     signal: options.signal,
   })
-  if (!response.ok || !response.body) throw new Error(`Generation request failed (${response.status})`)
+  if (!response.ok || !response.body) {
+    const body = await response.json().catch(() => ({})) as { error?: string }
+    throw new Error(body.error ?? `Generation request failed (${response.status})`)
+  }
 
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
-  let buffer = ''
-  while (true) {
-    const { done, value = '' } = await reader.read()
-    buffer += value.replaceAll('\r\n', '\n')
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary >= 0) {
-      const event = parseSseBlock(buffer.slice(0, boundary))
-      if (event) options.onEvent(event)
-      buffer = buffer.slice(boundary + 2)
-      boundary = buffer.indexOf('\n\n')
-    }
-    if (done) break
-  }
-  if (buffer.trim()) {
-    const event = parseSseBlock(buffer)
-    if (event) options.onEvent(event)
-  }
+  await consumeGenerationStream(response, options.onEvent)
 }
 
 export function generateApplication(options: GenerateOptions) {
@@ -168,6 +184,8 @@ export type ProjectApplicationState = {
 }
 
 const localStateKey = (projectId: string) => `genesis.demo.state.${projectId}`
+const localSnapshotsKey = (projectId: string) => `genesis.demo.snapshots.${projectId}`
+type LocalSnapshot = ProjectSnapshot & { files: Record<string, string> }
 
 export async function loadApplicationState(projectId: string, idToken?: string): Promise<ProjectApplicationState | null> {
   const baseUrl = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
@@ -185,6 +203,85 @@ export async function loadApplicationState(projectId: string, idToken?: string):
 
 export function saveLocalApplicationState(projectId: string, state: ProjectApplicationState) {
   localStorage.setItem(localStateKey(projectId), JSON.stringify(state))
+  if (state.snapshotId && state.files) {
+    const snapshots = JSON.parse(localStorage.getItem(localSnapshotsKey(projectId)) ?? '[]') as LocalSnapshot[]
+    if (!snapshots.some((snapshot) => snapshot.id === state.snapshotId)) {
+      const prompt = [...state.messages].reverse().find((message) => message.role === 'user')?.content ?? ''
+      const summary = [...state.messages].reverse().find((message) => message.role === 'assistant')?.content ?? ''
+      snapshots.unshift({
+        id: state.snapshotId,
+        prompt,
+        summary,
+        provider: 'mock',
+        fileCount: Object.keys(state.files).length,
+        createdAt: new Date().toISOString(),
+        files: state.files,
+      })
+      localStorage.setItem(localSnapshotsKey(projectId), JSON.stringify(snapshots.slice(0, 50)))
+    }
+  }
+}
+
+async function authenticatedRequest<T>(path: string, idToken: string, init?: RequestInit): Promise<T> {
+  const baseUrl = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
+  if (!baseUrl) throw new Error('Firebase Functions are not configured.')
+  const response = await fetch(`${baseUrl}/${path}`, {
+    ...init,
+    headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json', ...init?.headers },
+  })
+  const body = await response.json().catch(() => ({})) as T & { error?: string }
+  if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status}).`)
+  return body
+}
+
+export async function saveApplicationFiles(projectId: string, files: Record<string, GeneratedFile>, idToken?: string) {
+  const stateFiles = Object.fromEntries(Object.entries(files).map(([path, file]) => [path, file.content]))
+  if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) return stateFiles
+  if (!idToken) throw new Error('Sign in again to save files.')
+  await authenticatedRequest<{ ok: true }>('saveFiles', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ projectId, files: stateFiles }),
+  })
+  return stateFiles
+}
+
+export async function listApplicationSnapshots(projectId: string, idToken?: string): Promise<ProjectSnapshot[]> {
+  if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
+    return JSON.parse(localStorage.getItem(localSnapshotsKey(projectId)) ?? '[]') as LocalSnapshot[]
+  }
+  if (!idToken) throw new Error('Sign in again to load snapshots.')
+  const query = new URLSearchParams({ projectId })
+  const result = await authenticatedRequest<{ snapshots: ProjectSnapshot[] }>(`projectSnapshots?${query}`, idToken)
+  return result.snapshots
+}
+
+export async function restoreApplicationSnapshot(projectId: string, snapshotId: string, idToken?: string) {
+  if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
+    const snapshots = JSON.parse(localStorage.getItem(localSnapshotsKey(projectId)) ?? '[]') as LocalSnapshot[]
+    const snapshot = snapshots.find((candidate) => candidate.id === snapshotId)
+    if (!snapshot) throw new Error('Snapshot was not found.')
+    const state = JSON.parse(localStorage.getItem(localStateKey(projectId)) ?? '{"messages":[]}') as ProjectApplicationState
+    if (state.files) {
+      snapshots.unshift({
+        id: crypto.randomUUID(),
+        prompt: '',
+        summary: 'Backup created automatically before restoring a snapshot.',
+        provider: 'manual',
+        kind: 'backup',
+        fileCount: Object.keys(state.files).length,
+        createdAt: new Date().toISOString(),
+        files: state.files,
+      })
+      localStorage.setItem(localSnapshotsKey(projectId), JSON.stringify(snapshots.slice(0, 50)))
+    }
+    saveLocalApplicationState(projectId, { ...state, snapshotId, files: snapshot.files })
+    return { snapshotId, files: snapshot.files }
+  }
+  if (!idToken) throw new Error('Sign in again to restore a snapshot.')
+  return authenticatedRequest<{ snapshotId: string; files: Record<string, string>; backupSnapshotId?: string }>('restoreSnapshot', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ projectId, snapshotId }),
+  })
 }
 
 export const initialDemoFiles = Object.fromEntries(

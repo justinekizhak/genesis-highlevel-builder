@@ -3,6 +3,15 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
 import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+} from 'reka-ui'
+import {
   IconBraces,
   IconChevronDown,
   IconCode,
@@ -21,11 +30,19 @@ import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
 import { buildSrcdoc } from '@/lib/srcdoc'
-import { generateApplication, initialDemoFiles, loadApplicationState, saveLocalApplicationState } from '@/services/generation'
+import {
+  generateApplication,
+  initialDemoFiles,
+  listApplicationSnapshots,
+  loadApplicationState,
+  restoreApplicationSnapshot,
+  saveApplicationFiles,
+  saveLocalApplicationState,
+} from '@/services/generation'
 import { useAuthStore } from '@/stores/auth'
 import { useHighLevelStore } from '@/stores/highlevel'
 import { useProjectsStore } from '@/stores/projects'
-import type { ChatMessage, GeneratedFile, GenerationEvent } from '@/types/generation'
+import type { ChatMessage, GeneratedFile, GenerationEvent, ProjectSnapshot } from '@/types/generation'
 import { highLevelOperationSet, type HighLevelOperation, type HighLevelParameters } from '@/types/highlevel'
 
 const route = useRoute()
@@ -48,6 +65,12 @@ const generationError = ref('')
 const previewDocument = ref(buildSrcdoc(files.value))
 const previewFrame = ref<HTMLIFrameElement>()
 const bridgeError = ref('')
+const snapshotOpen = ref(false)
+const snapshots = ref<ProjectSnapshot[]>([])
+const snapshotLoading = ref(false)
+const snapshotError = ref('')
+const restoringSnapshotId = ref<string>()
+const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const currentGenerationId = ref<string>()
 const currentSnapshotId = ref<string>()
 const activeModel = ref(import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Model pending' : 'Local mock')
@@ -55,6 +78,7 @@ const mobilePanel = ref<'chat' | 'code' | 'preview'>('chat')
 const streamSourceLabel = import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Firebase stream' : 'Local mock stream'
 let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
+let saveTimer: number | undefined
 const bridgeRequests = new Set<string>()
 
 const activeFile = computed(() => files.value[activePath.value])
@@ -73,6 +97,15 @@ function cloneFiles(source: Record<string, GeneratedFile>) {
 
 function renderPreview() {
   previewDocument.value = buildSrcdoc(files.value, { enableHighLevelBridge: highLevelStore.connection.connected })
+}
+
+function hydrateFiles(source: Record<string, string>) {
+  files.value = Object.fromEntries(Object.entries(source).map(([path, content]) => [path, {
+    path,
+    content,
+    language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html',
+  }]))
+  activePath.value = Object.keys(files.value)[0] ?? 'app.js'
 }
 
 function parseBridgeRequest(event: MessageEvent) {
@@ -126,12 +159,7 @@ onMounted(async () => {
       highLevelStore.loadStatus(),
     ])
     if (state?.files) {
-      files.value = Object.fromEntries(Object.entries(state.files).map(([path, content]) => [path, {
-        path,
-        content,
-        language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html',
-      }]))
-      activePath.value = Object.keys(files.value)[0] ?? 'app.js'
+      hydrateFiles(state.files)
       renderPreview()
       currentSnapshotId.value = state.snapshotId
     }
@@ -141,12 +169,69 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => window.removeEventListener('message', handleHighLevelBridge))
+onBeforeUnmount(() => {
+  window.removeEventListener('message', handleHighLevelBridge)
+  if (saveTimer) window.clearTimeout(saveTimer)
+  controller?.abort()
+})
 watch(() => highLevelStore.connection.connected, renderPreview)
 
 function updateActiveFile(content: string) {
   if (!activeFile.value || isGenerating.value) return
   files.value[activePath.value] = { ...activeFile.value, content }
+  currentSnapshotId.value = undefined
+  saveStatus.value = 'saving'
+  if (saveTimer) window.clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(persistManualFiles, 700)
+}
+
+async function persistManualFiles() {
+  try {
+    const savedFiles = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken())
+    if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
+      saveLocalApplicationState(projectId.value, {
+        snapshotId: currentSnapshotId.value,
+        files: savedFiles,
+        messages: messages.value,
+      })
+    }
+    saveStatus.value = 'saved'
+    renderPreview()
+  } catch (error) {
+    saveStatus.value = 'error'
+    generationError.value = error instanceof Error ? error.message : 'Could not save the edited files.'
+  }
+}
+
+async function openSnapshotHistory() {
+  snapshotOpen.value = true
+  snapshotLoading.value = true
+  snapshotError.value = ''
+  try {
+    snapshots.value = await listApplicationSnapshots(projectId.value, await authStore.getIdToken())
+  } catch (error) {
+    snapshotError.value = error instanceof Error ? error.message : 'Could not load snapshot history.'
+  } finally {
+    snapshotLoading.value = false
+  }
+}
+
+async function restoreSnapshot(snapshot: ProjectSnapshot) {
+  if (snapshot.id === currentSnapshotId.value || restoringSnapshotId.value) return
+  if (saveTimer) window.clearTimeout(saveTimer)
+  restoringSnapshotId.value = snapshot.id
+  snapshotError.value = ''
+  try {
+    const restored = await restoreApplicationSnapshot(projectId.value, snapshot.id, await authStore.getIdToken())
+    hydrateFiles(restored.files)
+    currentSnapshotId.value = restored.snapshotId
+    renderPreview()
+    snapshotOpen.value = false
+  } catch (error) {
+    snapshotError.value = error instanceof Error ? error.message : 'Could not restore the snapshot.'
+  } finally {
+    restoringSnapshotId.value = undefined
+  }
 }
 
 function handleEvent(event: GenerationEvent) {
@@ -154,7 +239,6 @@ function handleEvent(event: GenerationEvent) {
     case 'generation_started':
       currentGenerationId.value = event.generationId
       activeModel.value = event.provider === 'openai' ? (event.model ?? 'OpenAI') : 'Local mock'
-      files.value = {}
       break
     case 'token': {
       const last = messages.value.at(-1)
@@ -170,6 +254,13 @@ function handleEvent(event: GenerationEvent) {
     case 'file_delta': {
       const file = files.value[event.path]
       if (file) files.value[event.path] = { ...file, content: file.content + event.delta }
+      break
+    }
+    case 'file_complete': {
+      const file = files.value[event.path]
+      if (!file || file.content.length !== event.size) {
+        generationError.value = `The stream for ${event.path} ended unexpectedly. Partial output has been preserved.`
+      }
       break
     }
     case 'snapshot_created':
@@ -189,7 +280,6 @@ function handleEvent(event: GenerationEvent) {
       break
     case 'error':
       generationError.value = event.message
-      if (filesBeforeGeneration) files.value = filesBeforeGeneration
       break
   }
 }
@@ -197,6 +287,8 @@ function handleEvent(event: GenerationEvent) {
 async function submitPrompt(suggestion?: string) {
   const value = (suggestion ?? prompt.value).trim()
   if (!value || isGenerating.value) return
+  if (saveTimer) window.clearTimeout(saveTimer)
+  if (saveStatus.value === 'saving') await persistManualFiles()
   prompt.value = ''
   generationError.value = ''
   isGenerating.value = true
@@ -217,7 +309,6 @@ async function submitPrompt(suggestion?: string) {
     if ((error as DOMException).name !== 'AbortError') {
       generationError.value = error instanceof Error ? error.message : 'Generation failed unexpectedly.'
     }
-    if (filesBeforeGeneration) files.value = filesBeforeGeneration
   } finally {
     isGenerating.value = false
     controller = undefined
@@ -227,9 +318,9 @@ async function submitPrompt(suggestion?: string) {
 
 function stopGeneration() {
   controller?.abort()
-  if (filesBeforeGeneration) files.value = filesBeforeGeneration
   filesBeforeGeneration = undefined
   isGenerating.value = false
+  generationError.value = 'Generation stopped. Partial output has been preserved in the editor.'
 }
 
 function refreshPreview() {
@@ -255,7 +346,7 @@ function refreshPreview() {
 
       <div class="topbar-actions">
         <Badge :class="isGenerating ? 'status-badge active' : 'status-badge'">{{ statusLabel }}</Badge>
-        <Button variant="ghost" size="icon" aria-label="Open snapshot history">
+        <Button variant="ghost" size="icon" aria-label="Open snapshot history" @click="openSnapshotHistory">
           <IconHistory :size="17" />
         </Button>
         <Button variant="secondary" size="sm" @click="router.push('/projects')">
@@ -327,6 +418,9 @@ function refreshPreview() {
         <div class="panel-toolbar">
           <div class="toolbar-title"><IconCode :size="16" /><span>Code</span></div>
           <span v-if="isGenerating" class="read-only-label">Read only while generating</span>
+          <span v-else-if="saveStatus === 'saving'" class="read-only-label">Saving edit…</span>
+          <span v-else-if="saveStatus === 'saved'" class="read-only-label">Saved</span>
+          <span v-else-if="saveStatus === 'error'" class="read-only-label error-message">Save failed</span>
         </div>
         <div class="code-body">
           <nav class="file-tree" aria-label="Generated files">
@@ -394,6 +488,47 @@ function refreshPreview() {
         </div>
       </section>
     </section>
+
+    <DialogRoot v-model:open="snapshotOpen">
+      <DialogPortal>
+        <DialogOverlay class="snapshot-backdrop" />
+        <DialogContent class="snapshot-dialog" aria-describedby="snapshot-description">
+        <div class="dialog-heading">
+          <div>
+            <DialogTitle id="snapshot-title">Snapshot history</DialogTitle>
+            <DialogDescription id="snapshot-description">Every successful generation can be restored.</DialogDescription>
+          </div>
+          <DialogClose as-child>
+            <Button variant="ghost" size="icon" aria-label="Close snapshot history">×</Button>
+          </DialogClose>
+        </div>
+        <p v-if="snapshotLoading" class="snapshot-empty">Loading snapshots…</p>
+        <p v-else-if="snapshotError" class="form-error" role="alert">{{ snapshotError }}</p>
+        <p v-else-if="!snapshots.length" class="snapshot-empty">No snapshots yet. Generate an app to create the first one.</p>
+        <div v-else class="snapshot-list">
+          <article v-for="snapshot in snapshots" :key="snapshot.id" class="snapshot-row">
+            <div>
+              <div class="snapshot-meta">
+                <strong>{{ new Date(snapshot.createdAt).toLocaleString() }}</strong>
+                <Badge v-if="snapshot.id === currentSnapshotId">Current</Badge>
+                <Badge v-else>{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.provider }}</Badge>
+              </div>
+              <p>{{ snapshot.prompt || snapshot.summary }}</p>
+              <span>{{ snapshot.fileCount }} files</span>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              :disabled="snapshot.id === currentSnapshotId || Boolean(restoringSnapshotId)"
+              @click="restoreSnapshot(snapshot)"
+            >
+              {{ restoringSnapshotId === snapshot.id ? 'Restoring…' : 'Restore' }}
+            </Button>
+          </article>
+        </div>
+        </DialogContent>
+      </DialogPortal>
+    </DialogRoot>
 
     <footer class="statusbar">
       <span>{{ fileList.length }} files</span>

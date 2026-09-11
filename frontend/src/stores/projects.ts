@@ -73,14 +73,14 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
-  async function create(name: string, description: string) {
+  async function create(name: string, description: string, locationId: string | null = null) {
     const auth = useAuthStore()
     if (!auth.user) throw new Error('Sign in before creating a project.')
     const project: Omit<Project, 'id'> = {
       name,
       description,
       ownerId: auth.user.uid,
-      locationId: null,
+      locationId,
       deletedAt: null,
       updatedAt: new Date().toISOString(),
     }
@@ -114,5 +114,20 @@ export const useProjectsStore = defineStore('projects', () => {
     projects.value = projects.value.filter((project) => project.id !== projectId)
   }
 
-  return { projects, loading, error, load, create, softDelete }
+  async function update(projectId: string, changes: { name?: string; description?: string }) {
+    if (!firebaseEnabled) {
+      const all = readDemoProjects().map((project) => project.id === projectId
+        ? { ...project, ...changes, updatedAt: new Date().toISOString() }
+        : project)
+      localStorage.setItem(storageKey, JSON.stringify(all))
+      projects.value = all.filter((project) => !project.deletedAt)
+      return
+    }
+    await updateDoc(doc(requireFirestore(), 'projects', projectId), { ...changes, updatedAt: serverTimestamp() })
+    projects.value = projects.value.map((project) => project.id === projectId
+      ? { ...project, ...changes, updatedAt: new Date().toISOString() }
+      : project)
+  }
+
+  return { projects, loading, error, load, create, update, softDelete }
 })
