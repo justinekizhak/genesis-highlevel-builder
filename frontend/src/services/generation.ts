@@ -61,17 +61,50 @@ async function loadDashboard() {
   if (window.genesis?.highlevel) {
     const result = await window.genesis.highlevel.contacts.list({ limit: 20 });
     contacts = result.contacts || result.items || contacts;
-    const calendarResult = await window.genesis.highlevel.appointments.list({ limit: 20 });
-    appointments = calendarResult.appointments || calendarResult.events || [];
+    try {
+      const calendarResult = await window.genesis.highlevel.calendars.list({});
+      const calendar = (calendarResult.calendars || [])[0];
+      if (calendar?.id) {
+        const startTime = String(Date.now());
+        const endTime = String(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        const appointmentResult = await window.genesis.highlevel.appointments.list({ calendarId: calendar.id, startTime, endTime });
+        appointments = appointmentResult.appointments || appointmentResult.events || [];
+      }
+    } catch (error) {
+      const count = document.querySelector('#appointment-count');
+      count.textContent = 'Unavailable';
+      count.title = error instanceof Error ? error.message : 'Could not load appointments.';
+    }
   }
   window.dashboardContacts = contacts;
   renderContacts(contacts);
   document.querySelector('#contact-count').textContent = String(contacts.length);
-  document.querySelector('#appointment-count').textContent = String(appointments.length);
+  const appointmentCount = document.querySelector('#appointment-count');
+  if (appointmentCount.textContent !== 'Unavailable') appointmentCount.textContent = String(appointments.length);
 }
 
 function renderContacts(contacts) {
-  document.querySelector('#contacts').innerHTML = contacts.map((contact) => \`<article class="contact"><strong>\${contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(' ')}</strong><span>\${contact.email || 'No email'}</span><span>\${contact.added || 'Recent'}</span></article>\`).join('') || '<p class="empty">No contacts found.</p>';
+  const container = document.querySelector('#contacts');
+  container.textContent = '';
+  if (!contacts.length) {
+    const empty = document.createElement('p');
+    empty.className = 'empty';
+    empty.textContent = 'No contacts found.';
+    container.append(empty);
+    return;
+  }
+  for (const contact of contacts) {
+    const row = document.createElement('article');
+    row.className = 'contact';
+    const name = document.createElement('strong');
+    name.textContent = contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'Unnamed contact';
+    const email = document.createElement('span');
+    email.textContent = contact.email || 'No email';
+    const added = document.createElement('span');
+    added.textContent = contact.added || 'Recent';
+    row.append(name, email, added);
+    container.append(row);
+  }
 }
 
 document.querySelector('#search').addEventListener('input', (event) => {
@@ -79,7 +112,14 @@ document.querySelector('#search').addEventListener('input', (event) => {
   renderContacts((window.dashboardContacts || []).filter((contact) => JSON.stringify(contact).toLowerCase().includes(query)));
 });
 document.querySelector('#refresh').addEventListener('click', loadDashboard);
-loadDashboard().catch((error) => { document.querySelector('#contacts').innerHTML = \`<p class="empty">\${error.message}</p>\`; });`,
+loadDashboard().catch((error) => {
+  const container = document.querySelector('#contacts');
+  container.textContent = '';
+  const message = document.createElement('p');
+  message.className = 'empty';
+  message.textContent = error instanceof Error ? error.message : 'Could not load HighLevel data.';
+  container.append(message);
+});`,
 }
 
 const wait = (milliseconds: number, signal: AbortSignal) =>
@@ -160,7 +200,6 @@ async function runRemote(options: GenerateOptions, baseUrl: string) {
     body: JSON.stringify({
       prompt: options.prompt,
       projectId: options.projectId,
-      currentFiles: Object.fromEntries(Object.entries(options.currentFiles).map(([path, file]) => [path, file.content])),
     }),
     signal: options.signal,
   })

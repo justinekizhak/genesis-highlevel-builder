@@ -111,7 +111,10 @@ button, textarea, input { font: inherit; }
 .file-tree button.active { background: #29261e; color: #f0c66e; }
 .tree-empty { padding: 8px; color: #696760; font-size: 10px; line-height: 1.5; }
 .editor-wrap { position: relative; display: grid; grid-template-rows: 34px minmax(0, 1fr); min-width: 0; min-height: 0; background: #1e1e1e; }
-.editor-tab { display: flex; align-items: center; gap: 7px; width: max-content; padding: 0 12px; border-right: 1px solid #34332f; border-top: 1px solid var(--accent); background: #1e1e1e; color: #d1cdc3; font: 10px "IBM Plex Mono", ui-monospace, monospace; }
+.editor-tabs-root { min-width: 0; overflow: hidden; border-bottom: 1px solid #34332f; background: #171715; }
+.editor-tabs { display: flex; max-width: 100%; overflow-x: auto; }
+.editor-tab { display: flex; align-items: center; gap: 7px; width: max-content; min-width: max-content; padding: 0 12px; border: 0; border-right: 1px solid #34332f; border-top: 1px solid transparent; background: #171715; color: #77746d; font: 10px "IBM Plex Mono", ui-monospace, monospace; cursor: pointer; }
+.editor-tab[data-state="active"] { border-top-color: var(--accent); background: #1e1e1e; color: #d1cdc3; }
 .editor-empty { grid-row: 1 / -1; display: grid; place-content: center; justify-items: center; color: #6c6962; font-size: 12px; }
 
 .preview-url { padding: 5px 10px; border: 1px solid #34332d; border-radius: 6px; color: #77746d; font: 9px "IBM Plex Mono", ui-monospace, monospace; }
@@ -233,9 +236,10 @@ button, textarea, input { font: inherit; }
   .app-shell { grid-template-rows: 56px 43px minmax(0, 1fr) 25px; }
   .topbar { grid-template-columns: 1fr auto; }
   .project-switcher { display: none; }
-  .mobile-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--border); background: #151512; }
+  .mobile-tabs { display: block; border-bottom: 1px solid var(--border); background: #151512; }
+  .mobile-tab-list { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
   .mobile-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #77746d; font-size: 11px; }
-  .mobile-tabs button.active { border-bottom-color: var(--accent); color: #e1c27c; }
+  .mobile-tabs button[data-state="active"] { border-bottom-color: var(--accent); color: #e1c27c; }
   .workspace { display: block; }
   .panel { display: none; height: 100%; border-left: 0 !important; }
   .panel.mobile-active { display: grid; }

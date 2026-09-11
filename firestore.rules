@@ -11,21 +11,53 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/projects/$(projectId)).data.ownerId == request.auth.uid;
     }
 
+    function validProject(data) {
+      return data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 120
+        && data.description is string
+        && data.description.size() <= 2000
+        && (data.locationId == null || data.locationId is string)
+        && (data.deletedAt == null || data.deletedAt is timestamp);
+    }
+
     match /users/{userId} {
       allow read, create, update: if signedIn() && request.auth.uid == userId;
       allow delete: if false;
     }
 
     match /projects/{projectId} {
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'name', 'description', 'ownerId', 'locationId', 'deletedAt', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp
+        && validProject(request.resource.data);
       allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
       allow update: if signedIn()
         && resource.data.ownerId == request.auth.uid
-        && request.resource.data.ownerId == request.auth.uid;
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['name', 'description', 'deletedAt', 'updatedAt'])
+        && request.resource.data.updatedAt is timestamp
+        && validProject(request.resource.data);
       allow delete: if false;
 
-      match /{subcollection}/{document=**} {
-        allow read, write: if ownsProject(projectId);
+      match /files/{fileId} {
+        allow read: if ownsProject(projectId);
+        allow write: if false;
+      }
+
+      match /messages/{messageId} {
+        allow read: if ownsProject(projectId);
+        allow write: if false;
+      }
+
+      match /snapshots/{snapshotId} {
+        allow read: if ownsProject(projectId);
+        allow write: if false;
       }
     }
 

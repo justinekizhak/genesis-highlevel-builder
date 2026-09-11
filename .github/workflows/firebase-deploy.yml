@@ -114,3 +114,21 @@ jobs:
 
       - name: Deploy Hosting, Functions, and Firestore configuration
         run: pnpm dlx firebase-tools@15.29.0 deploy --only hosting,functions,firestore:rules,firestore:indexes --project jk-ai-app-builder --non-interactive
+
+      - name: Verify production deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --silent --show-error \
+            --retry 18 --retry-all-errors --retry-delay 10 --max-time 20 \
+            https://jk-ai-app-builder.web.app/ > /dev/null
+
+          health_response="$(curl --fail --silent --show-error \
+            --retry 18 --retry-all-errors --retry-delay 10 --max-time 20 \
+            https://us-central1-jk-ai-app-builder.cloudfunctions.net/healthz)"
+
+          if [[ "$health_response" != *'"status":"ok"'* ]]; then
+            echo "Unexpected health check response: $health_response"
+            exit 1
+          fi

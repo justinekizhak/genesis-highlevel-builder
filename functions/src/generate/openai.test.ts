@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { generateWithOpenAi } from './openai.js'
+import { buildModelInput, generateWithOpenAi } from './openai.js'
 
 const application = {
   summary: 'Built a contact dashboard.',
@@ -16,6 +16,21 @@ afterEach(() => {
 })
 
 describe('OpenAI streaming transport', () => {
+  it('includes bounded server-owned project and conversation context', () => {
+    const input = buildModelInput('Refine it', { 'app.js': 'stored-file' }, {
+      project: { name: 'CRM dashboard', description: 'Current project', locationId: 'location-1' },
+      files: { 'app.js': 'stored-file' },
+      recentMessages: Array.from({ length: 15 }, (_, index) => ({
+        role: index % 2 ? 'assistant' as const : 'user' as const,
+        content: `message-${index}`,
+      })),
+    })
+    expect(input).toContain('CRM dashboard')
+    expect(input).toContain('stored-file')
+    expect(input).not.toContain('message-0')
+    expect(input).toContain('message-14')
+  })
+
   it('collects output-text deltas while exposing them incrementally', async () => {
     process.env.OPENAI_API_KEY = 'test-key'
     const json = JSON.stringify(application)
@@ -36,6 +51,9 @@ describe('OpenAI streaming transport', () => {
     await expect(generateWithOpenAi('Build contacts', {}, undefined, (delta) => deltas.push(delta)))
       .resolves.toEqual(application)
     expect(deltas.join('')).toBe(json)
-    expect(vi.mocked(fetch).mock.calls[0]?.[1]?.body).toContain('"stream":true')
+    const requestBody = vi.mocked(fetch).mock.calls[0]?.[1]?.body
+    expect(requestBody).toContain('"stream":true')
+    expect(requestBody).toContain('interpret contacts,\\nconversations, and calendars as HighLevel contacts')
+    expect(requestBody).toContain('window.genesis.highlevel.contacts.list(parameters)')
   })
 })

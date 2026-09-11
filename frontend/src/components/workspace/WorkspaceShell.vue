@@ -21,6 +21,7 @@ import {
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import {
   AlertDialog,
@@ -63,6 +64,7 @@ const MonacoEditor = defineAsyncComponent({
 const workspaceRoot = ref<HTMLElement>()
 const files = ref<Record<string, GeneratedFile>>(structuredClone(initialDemoFiles))
 const activePath = ref('app.js')
+const openTabs = ref<string[]>(['app.js'])
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -135,7 +137,14 @@ function hydrateFiles(source: Record<string, string>) {
     content,
     language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html',
   }]))
-  activePath.value = Object.keys(files.value)[0] ?? 'app.js'
+  const firstPath = Object.keys(files.value)[0] ?? 'app.js'
+  activePath.value = firstPath
+  openTabs.value = [firstPath]
+}
+
+function openFile(path: string) {
+  if (!openTabs.value.includes(path)) openTabs.value.push(path)
+  activePath.value = path
 }
 
 function parseBridgeRequest(event: MessageEvent) {
@@ -254,7 +263,7 @@ function updateActiveFile(content: string) {
   saveTimer = window.setTimeout(persistManualFiles, 700)
 }
 
-async function persistManualFiles() {
+async function persistManualFiles(): Promise<boolean> {
   try {
     const savedFiles = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken())
     if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
@@ -266,9 +275,11 @@ async function persistManualFiles() {
     }
     saveStatus.value = 'saved'
     renderPreview()
+    return true
   } catch (error) {
     saveStatus.value = 'error'
     generationError.value = error instanceof Error ? error.message : 'Could not save the edited files.'
+    return false
   }
 }
 
@@ -322,7 +333,7 @@ function handleEvent(event: GenerationEvent) {
     }
     case 'file_start':
       files.value[event.path] = { path: event.path, language: event.language, content: '' }
-      activePath.value = event.path
+      openFile(event.path)
       mobilePanel.value = 'code'
       break
     case 'file_delta': {
@@ -364,7 +375,7 @@ async function submitPrompt(suggestion?: string) {
   const value = (suggestion ?? prompt.value).trim()
   if (!value || isGenerating.value) return
   if (saveTimer) window.clearTimeout(saveTimer)
-  if (saveStatus.value === 'saving') await persistManualFiles()
+  if ((saveStatus.value === 'saving' || saveStatus.value === 'error') && !await persistManualFiles()) return
   prompt.value = ''
   generationError.value = ''
   isGenerating.value = true
@@ -435,11 +446,13 @@ function refreshPreview() {
       </div>
     </header>
 
-    <nav class="mobile-tabs" aria-label="Workspace panels">
-      <button :class="{ active: mobilePanel === 'chat' }" @click="mobilePanel = 'chat'"><IconMessage :size="16" />Chat</button>
-      <button :class="{ active: mobilePanel === 'code' }" @click="mobilePanel = 'code'"><IconCode :size="16" />Code</button>
-      <button :class="{ active: mobilePanel === 'preview' }" @click="mobilePanel = 'preview'"><IconExternalLink :size="16" />Preview</button>
-    </nav>
+    <Tabs v-model="mobilePanel" class="mobile-tabs" aria-label="Workspace panels">
+      <TabsList class="mobile-tab-list">
+        <TabsTrigger value="chat"><IconMessage :size="16" />Chat</TabsTrigger>
+        <TabsTrigger value="code"><IconCode :size="16" />Code</TabsTrigger>
+        <TabsTrigger value="preview"><IconExternalLink :size="16" />Preview</TabsTrigger>
+      </TabsList>
+    </Tabs>
 
     <section class="workspace">
       <aside class="panel chat-panel" :class="{ 'mobile-active': mobilePanel === 'chat' }">
@@ -509,7 +522,7 @@ function refreshPreview() {
               v-for="file in fileList"
               :key="file.path"
               :class="{ active: file.path === activePath }"
-              @click="activePath = file.path"
+              @click="openFile(file.path)"
             >
               <IconFileCode :size="15" />
               <span>{{ file.path }}</span>
@@ -517,10 +530,14 @@ function refreshPreview() {
             <p v-if="!fileList.length" class="tree-empty">Waiting for the first file...</p>
           </nav>
           <div class="editor-wrap">
-            <div v-if="activeFile" class="editor-tab">
-              <IconFileCode :size="14" />
-              <span>{{ activePath }}</span>
-            </div>
+            <Tabs v-if="activeFile" v-model="activePath" class="editor-tabs-root">
+              <TabsList class="editor-tabs" aria-label="Open files">
+                <TabsTrigger v-for="path in openTabs" :key="path" :value="path" class="editor-tab">
+                  <IconFileCode :size="14" />
+                  <span>{{ path }}</span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             <MonacoEditor
               v-if="activeFile"
               :value="activeFile.content"

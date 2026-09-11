@@ -19,9 +19,9 @@ export const highLevelOperations = {
   'conversations.list': { method: 'GET', path: '/conversations/search', allowedQuery: ['limit', 'startAfterDate'], location: 'query' },
   'conversations.messages': { method: 'GET', path: '/conversations/:conversationId/messages', allowedQuery: ['limit', 'lastMessageId'], location: 'none' },
   'conversations.send': { method: 'POST', path: '/conversations/messages', allowedBody: ['type', 'contactId', 'message', 'html', 'subject', 'status'], location: 'none' },
-  'calendars.list': { method: 'GET', path: '/calendars/', allowedQuery: [], location: 'query' },
+  'calendars.list': { method: 'GET', path: '/calendars/', allowedQuery: ['groupId', 'showDrafted'], location: 'query' },
   'calendars.availability': { method: 'GET', path: '/calendars/:calendarId/free-slots', allowedQuery: ['startDate', 'endDate', 'timezone', 'userId'], location: 'none' },
-  'appointments.list': { method: 'GET', path: '/calendars/events', allowedQuery: ['calendarId', 'startTime', 'endTime'], location: 'query' },
+  'appointments.list': { method: 'GET', path: '/calendars/events', allowedQuery: ['calendarId', 'userId', 'groupId', 'startTime', 'endTime'], location: 'query' },
 } as const satisfies Record<string, OperationDefinition>
 
 export type HighLevelOperation = keyof typeof highLevelOperations
@@ -35,7 +35,21 @@ function requireIdentifier(parameters: HighLevelParameters, key: string) {
   return encodeURIComponent(value)
 }
 
-function validateWrite(operation: HighLevelOperation, parameters: HighLevelParameters) {
+export function validateHighLevelParameters(operation: HighLevelOperation, parameters: HighLevelParameters) {
+  if (operation === 'calendars.availability') {
+    requireIdentifier(parameters, 'calendarId')
+    if (!String(parameters.startDate ?? '').trim() || !String(parameters.endDate ?? '').trim()) {
+      throw new Error('Calendar availability requires startDate and endDate.')
+    }
+  }
+  if (operation === 'appointments.list') {
+    if (!String(parameters.startTime ?? '').trim() || !String(parameters.endTime ?? '').trim()) {
+      throw new Error('Listing appointments requires startTime and endTime.')
+    }
+    if (!['calendarId', 'userId', 'groupId'].some((key) => String(parameters[key] ?? '').trim())) {
+      throw new Error('Listing appointments requires a calendarId, userId, or groupId.')
+    }
+  }
   if (!writeOperations.has(operation)) return
   if (operation === 'contacts.create' && !['name', 'firstName', 'email', 'phone'].some((key) => String(parameters[key] ?? '').trim())) {
     throw new Error('Creating a contact requires a name, email, or phone number.')
@@ -59,7 +73,7 @@ function validateWrite(operation: HighLevelOperation, parameters: HighLevelParam
 export async function executeHighLevelOperation(uid: string, operation: HighLevelOperation, parameters: HighLevelParameters) {
   const definition: OperationDefinition | undefined = highLevelOperations[operation]
   if (!definition) throw new Error('HighLevel operation is not allowed.')
-  validateWrite(operation, parameters)
+  validateHighLevelParameters(operation, parameters)
 
   const pathKeys = [...definition.path.matchAll(/:([A-Za-z]+)/g)].map((match) => match[1])
   let path = definition.path

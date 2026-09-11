@@ -16,6 +16,7 @@ The current implementation includes the workspace, authentication boundary, proj
 - Debounced persistence for manual Monaco edits
 - TanStack Query caching and invalidation for project, integration, snapshot, and project-state requests
 - Route-level code splitting plus a dynamically imported Monaco editor
+- Multi-file editor tabs and responsive workspace tabs built on repo-owned shadcn-vue components
 - Latest-generation line diff viewer with added and removed line counts
 - Reduced-motion-aware Anime.js entrance and interaction feedback
 - Firestore project ownership rules and server-only HighLevel token boundary
@@ -23,6 +24,7 @@ The current implementation includes the workspace, authentication boundary, proj
 - Visible owner-scoped project create, read, edit, and soft-delete flows
 - HighLevel OAuth state validation, location-name lookup, server-only token storage, and refresh leasing
 - An allowlisted HighLevel gateway for Contacts, Conversations, and Calendars
+- Server-authoritative generation context loaded from Firestore with bounded recent conversation history
 - A sandbox-to-parent RPC bridge so generated apps can read and explicitly confirmed write HighLevel data without receiving credentials
 - Runtime connection status for both HighLevel and the configured OpenAI model
 
@@ -64,13 +66,24 @@ After deployment, verify the Hosting URL and the `/healthz` Function before reco
 
 ## HighLevel OAuth configuration
 
-Set the non-secret parameters in the Firebase environment and bind the client secret:
+1. Create a HighLevel developer account and a location-level marketplace app. Obtain its Client ID and Client Secret.
+2. Enable these scopes in the marketplace app:
 
-```bash
-firebase functions:secrets:set HL_CLIENT_SECRET
-```
+   ```text
+   contacts.readonly contacts.write conversations.readonly
+   conversations/message.readonly conversations/message.write
+   calendars.readonly calendars/events.readonly locations.readonly
+   ```
 
-Required values are documented in `.env.example`. Register the deployed `hlAuthCallback` function URL as the marketplace app redirect URI.
+3. From the developer dashboard, create a sandbox/test sub-account and add at least one calendar so the generated appointment views have a valid calendar ID.
+4. Copy `functions/.env.example` to the Firebase project-specific environment file and set `HL_CLIENT_ID`, `HL_REDIRECT_URI`, `HL_API_BASE`, `APP_ORIGINS`, and `APP_BASE_URL`.
+5. Store the client secret in Firebase Secret Manager:
+
+   ```bash
+   firebase functions:secrets:set HL_CLIENT_SECRET
+   ```
+
+6. Register the deployed `hlAuthCallback` Function URL as the marketplace app redirect URI. If scopes change after a location was connected, reinstall/re-authorize the app in the sandbox so the new grant is reflected in its tokens.
 
 The generated iframe cannot call HighLevel directly. It can request only these allowlisted bridge operations:
 
@@ -126,8 +139,8 @@ At the time of the latest audit, the public repository and `production` environm
 
 - The browser authenticates streaming POST requests with Firebase ID tokens using `fetch`; native `EventSource` cannot send the required authorization header and request body.
 - OpenAI structured-output deltas are parsed server-side into `token`, `file_start`, `file_delta`, `file_complete`, snapshot, completion, and error events.
-- Only three fixed preview files are accepted, which keeps validation, storage, and sandbox execution bounded.
-- Current editable files are stored separately from immutable generation snapshots.
+- Generation reloads three fixed project files and a bounded recent conversation from Firestore instead of trusting source code supplied by the browser; the fixed set keeps validation, storage, and sandbox execution bounded.
+- Current editable files are stored separately from server-write-only generation snapshots.
 - Snapshot restore creates a backup first, so restoring never discards the current manual state irreversibly.
 - Generated applications run in a CSP-restricted iframe with no direct network access.
 - HighLevel access crosses an allowlisted `postMessage` bridge and authenticated server proxy; OAuth credentials never reach generated code.

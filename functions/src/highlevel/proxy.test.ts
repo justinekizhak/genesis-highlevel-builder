@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { highLevelOperations } from './proxy.js'
+import { highLevelOperations, validateHighLevelParameters } from './proxy.js'
 
 describe('HighLevel operation allowlist', () => {
   it('contains only the three assignment API areas', () => {
@@ -24,5 +24,18 @@ describe('HighLevel operation allowlist', () => {
     expect(highLevelOperations['contacts.create']).toMatchObject({ method: 'POST', path: '/contacts/', location: 'body' })
     expect(highLevelOperations['contacts.update']).toMatchObject({ method: 'PUT', path: '/contacts/:contactId' })
     expect(highLevelOperations['conversations.send']).toMatchObject({ method: 'POST', path: '/conversations/messages' })
+  })
+
+  it('requires the HighLevel calendar event date range and owner selector', () => {
+    expect(() => validateHighLevelParameters('appointments.list', { limit: 20 })).toThrow(/startTime and endTime/)
+    expect(() => validateHighLevelParameters('appointments.list', {
+      startTime: '1767225600000',
+      endTime: '1769817600000',
+    })).toThrow(/calendarId, userId, or groupId/)
+    expect(() => validateHighLevelParameters('appointments.list', {
+      calendarId: 'calendar-1',
+      startTime: '1767225600000',
+      endTime: '1769817600000',
+    })).not.toThrow()
   })
 })

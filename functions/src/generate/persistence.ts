@@ -1,6 +1,16 @@
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore'
 import type { GeneratedApplication } from './application.js'
 
+export type GenerationContext = {
+  project: {
+    name: string
+    description: string
+    locationId: string | null
+  }
+  files: Record<string, string>
+  recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+}
+
 export async function requireOwnedProject(uid: string, projectId: string) {
   const reference = getFirestore().collection('projects').doc(projectId)
   const snapshot = await reference.get()
@@ -8,6 +18,37 @@ export async function requireOwnedProject(uid: string, projectId: string) {
     throw new Error('Project was not found.')
   }
   return reference
+}
+
+export async function loadGenerationContext(uid: string, projectId: string): Promise<GenerationContext> {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  const [project, currentFiles, messages] = await Promise.all([
+    projectReference.get(),
+    projectReference.collection('files').get(),
+    projectReference.collection('messages').orderBy('createdAt', 'asc').limitToLast(12).get(),
+  ])
+  const latestSnapshotId = project.get('latestSnapshotId') as string | undefined
+  const latestSnapshot = currentFiles.empty && latestSnapshotId
+    ? await projectReference.collection('snapshots').doc(latestSnapshotId).get()
+    : undefined
+  const files = currentFiles.empty
+    ? (latestSnapshot?.get('files') as Record<string, string> | undefined) ?? {}
+    : Object.fromEntries(currentFiles.docs.map((document) => [document.get('path'), document.get('content')]))
+
+  return {
+    project: {
+      name: String(project.get('name') ?? '').slice(0, 120),
+      description: String(project.get('description') ?? '').slice(0, 2_000),
+      locationId: typeof project.get('locationId') === 'string' ? project.get('locationId') : null,
+    },
+    files,
+    recentMessages: messages.docs.flatMap((document) => {
+      const role = document.get('role')
+      const content = document.get('content')
+      if ((role !== 'user' && role !== 'assistant') || typeof content !== 'string') return []
+      return [{ role, content: content.slice(0, 2_000) }]
+    }),
+  }
 }
 
 export async function persistGeneration(input: {

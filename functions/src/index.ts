@@ -8,10 +8,10 @@ import { mockProjectFiles } from './generate/mock-project.js'
 import { generateWithOpenAi, openAiApiKey, openAiModel } from './generate/openai.js'
 import {
   listProjectSnapshots,
+  loadGenerationContext,
   loadProjectState,
   persistGeneration,
   persistPartialGeneration,
-  requireOwnedProject,
   restoreProjectSnapshot,
   saveProjectFiles,
 } from './generate/persistence.js'
@@ -34,12 +34,7 @@ initializeApp()
 const generateRequestSchema = z.object({
   prompt: z.string().trim().min(3).max(4_000),
   projectId: z.string().trim().min(1).max(128),
-  currentFiles: z.object({
-    'index.html': z.string().max(100_000).optional(),
-    'styles.css': z.string().max(100_000).optional(),
-    'app.js': z.string().max(100_000).optional(),
-  }).strict().default({}),
-})
+}).strict()
 
 const proxyRequestSchema = z.object({
   operation: z.enum(Object.keys(highLevelOperations) as [HighLevelOperation, ...HighLevelOperation[]]),
@@ -106,7 +101,8 @@ export const generateApp = onRequest(
     try {
       const user = await requireFirebaseUser(request)
       const input = generateRequestSchema.parse(request.body)
-      await requireOwnedProject(user.uid, input.projectId)
+      const generationContext = await loadGenerationContext(user.uid, input.projectId)
+      const currentFiles = generationContext.files
       const useOpenAi = Boolean(openAiApiKey.value())
       logger.info('Starting application generation', {
         projectId: input.projectId,
@@ -144,14 +140,14 @@ export const generateApp = onRequest(
           generationId,
           provider: useOpenAi ? 'openai' : 'mock',
           parser: streamParser,
-          currentFiles: input.currentFiles,
+          currentFiles,
         }
         const application = useOpenAi
-          ? await generateWithOpenAi(input.prompt, input.currentFiles, abortController.signal, (delta) => {
+          ? await generateWithOpenAi(input.prompt, currentFiles, abortController.signal, (delta) => {
             for (const event of streamParser.push(delta)) {
               if (!response.destroyed) response.write(serializeSse(event))
             }
-          })
+          }, generationContext)
           : generatedApplicationSchema.parse({
             summary: 'OPENAI_API_KEY is not configured, so Genesis generated the safe demo application.',
             files: Object.entries(mockProjectFiles).map(([path, content]) => ({ path, content })),
@@ -328,25 +324,28 @@ export const hlAuthCallback = onRequest(
   },
 )
 
-export const hlConnectionStatus = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
-  applyCors(request, response)
-  if (request.method === 'OPTIONS') return void response.status(204).end()
-  if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
-  try {
-    const user = await requireFirebaseUser(request)
-    const connection = await getConnectionSummary(user.uid)
-    if (!connection) return void response.json({ connected: false })
-    response.json({
-      connected: true,
-      ...connection,
-    })
-  } catch (cause) {
-    httpError(response, cause)
-  }
-})
+export const hlConnectionStatus = onRequest(
+  { region: 'us-central1', cors: false, secrets: [highLevelClientSecret] },
+  async (request, response) => {
+    applyCors(request, response)
+    if (request.method === 'OPTIONS') return void response.status(204).end()
+    if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
+    try {
+      const user = await requireFirebaseUser(request)
+      const connection = await getConnectionSummary(user.uid)
+      if (!connection) return void response.json({ connected: false })
+      response.json({
+        connected: true,
+        ...connection,
+      })
+    } catch (cause) {
+      httpError(response, cause)
+    }
+  },
+)
 
 export const integrationStatus = onRequest(
-  { region: 'us-central1', cors: false, secrets: [openAiApiKey] },
+  { region: 'us-central1', cors: false, secrets: [openAiApiKey, highLevelClientSecret] },
   async (request, response) => {
     applyCors(request, response)
     if (request.method === 'OPTIONS') return void response.status(204).end()

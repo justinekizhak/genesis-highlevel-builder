@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { consumeGenerationStream, parseSseBlock } from './generation'
+import { consumeGenerationStream, initialDemoFiles, parseSseBlock } from './generation'
 import type { GenerationEvent } from '@/types/generation'
 
 function streamResponse(chunks: string[]) {
@@ -13,6 +13,14 @@ function streamResponse(chunks: string[]) {
 }
 
 describe('generation SSE transport', () => {
+  it('uses the valid HighLevel appointment contract and safe CRM rendering in the demo', () => {
+    const script = initialDemoFiles['app.js']!.content
+    expect(script).toContain('calendars.list({})')
+    expect(script).toContain('appointments.list({ calendarId: calendar.id, startTime, endTime })')
+    expect(script).toContain('name.textContent = contact.name')
+    expect(script).not.toContain('.innerHTML')
+  })
+
   it('parses data frames and ignores heartbeat comments', () => {
     expect(parseSseBlock(': heartbeat')).toBeUndefined()
     expect(parseSseBlock('event: token\ndata: {"type":"token","delta":"Hi"}')).toEqual({ type: 'token', delta: 'Hi' })
