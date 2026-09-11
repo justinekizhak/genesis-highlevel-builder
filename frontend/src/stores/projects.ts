@@ -68,6 +68,7 @@ export const useProjectsStore = defineStore('projects', () => {
         .filter((project) => !project.deletedAt)
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not load projects.'
+      throw cause
     } finally {
       loading.value = false
     }

@@ -8,12 +8,16 @@ export const applicationBaseUrl = defineString('APP_BASE_URL', { default: 'http:
 
 export const highLevelScopes = [
   'contacts.readonly',
+  'contacts.write',
   'conversations.readonly',
   'conversations/message.readonly',
+  'conversations/message.write',
   'calendars.readonly',
   'calendars/events.readonly',
   'locations.readonly',
 ].join(' ')
+
+export const highLevelApiVersion = 'v3'
 
 export function requireHighLevelConfig() {
   const clientId = highLevelClientId.value()

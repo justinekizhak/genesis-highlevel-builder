@@ -1,6 +1,6 @@
 # Genesis
 
-AI-powered HighLevel app builder built with Vue 3, TypeScript, shadcn-vue conventions, Monaco, and Firebase.
+AI-powered HighLevel app builder built with Vue 3, TypeScript, repo-owned shadcn-vue components, Monaco, and Firebase.
 
 ## Current milestone
 
@@ -14,12 +14,16 @@ The current implementation includes the workspace, authentication boundary, proj
 - Versioned Firestore snapshots, history, restore, and persisted user/assistant messages
 - Partial-generation preservation plus a recoverable backup before every restore
 - Debounced persistence for manual Monaco edits
+- TanStack Query caching and invalidation for project, integration, snapshot, and project-state requests
+- Route-level code splitting plus a dynamically imported Monaco editor
+- Latest-generation line diff viewer with added and removed line counts
+- Reduced-motion-aware Anime.js entrance and interaction feedback
 - Firestore project ownership rules and server-only HighLevel token boundary
 - Firebase email/password sign-in and sign-up with session restoration
-- Persistent owner-scoped project creation and soft-delete support
-- HighLevel OAuth state validation, server-only token storage, and refresh leasing
+- Visible owner-scoped project create, read, edit, and soft-delete flows
+- HighLevel OAuth state validation, location-name lookup, server-only token storage, and refresh leasing
 - An allowlisted HighLevel gateway for Contacts, Conversations, and Calendars
-- A sandbox-to-parent RPC bridge so generated apps can read HighLevel data without receiving credentials
+- A sandbox-to-parent RPC bridge so generated apps can read and explicitly confirmed write HighLevel data without receiving credentials
 - Runtime connection status for both HighLevel and the configured OpenAI model
 
 ## Local development
@@ -67,15 +71,19 @@ firebase functions:secrets:set HL_CLIENT_SECRET
 
 Required values are documented in `.env.example`. Register the deployed `hlAuthCallback` function URL as the marketplace app redirect URI.
 
-The generated iframe cannot call HighLevel directly. It can request only these read-only bridge operations:
+The generated iframe cannot call HighLevel directly. It can request only these allowlisted bridge operations:
 
 - `contacts.list`
+- `contacts.create` (confirmation required)
+- `contacts.update` (confirmation required)
 - `conversations.list`
 - `conversations.messages`
+- `conversations.send` (confirmation required)
 - `calendars.list`
+- `calendars.availability`
 - `appointments.list`
 
-Every request is source-checked in the browser, authenticated with Firebase, allowlisted in the Function, and executed with the server-side HighLevel token.
+Every request is source-checked in the browser, authenticated with Firebase, allowlisted in the Function, and executed with the server-side HighLevel token. Write requests pause in a shadcn-vue alert dialog until the user confirms them.
 
 ## OpenAI configuration
 
@@ -102,6 +110,17 @@ Restrict the Workload Identity provider to the exact GitHub repository and `main
 
 The non-secret production Functions parameters are stored in `functions/.env.jk-ai-app-builder`. Local overrides and secrets remain gitignored.
 
+### One-time GitHub setup
+
+The workflow is ready to verify pull requests and deploy every push to `main`, but it needs a public GitHub repository and two repository/environment variables plus two secrets. Create a GitHub environment named `production`, then configure:
+
+- Variables: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_APP_ID`
+- Secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT`
+
+The Google service account must be allowed to deploy Firebase Hosting, Cloud Functions, Firestore rules/indexes, Cloud Build artifacts, and impersonate the runtime service account. Restrict the Workload Identity provider to this exact repository and the `main` branch.
+
+At the time of the latest audit, the local Firebase CLI is authenticated and the Firebase project, web app, Hosting site, `OPENAI_API_KEY`, and `HL_CLIENT_SECRET` all exist. Hosting and Function URLs still return 404, so the first production deployment has not completed. The local GitHub CLI account is present but its token is invalid; run `gh auth login -h github.com` before creating and pushing the public repository.
+
 ## Architecture decisions
 
 - The browser authenticates streaming POST requests with Firebase ID tokens using `fetch`; native `EventSource` cannot send the required authorization header and request body.
@@ -118,10 +137,10 @@ The non-secret production Functions parameters are stored in `functions/.env.jk-
 ## What I would improve
 
 - Add emulator-backed integration tests for authenticated SSE, snapshots, OAuth, and Firestore rules.
-- Add generation diffs and selective file regeneration for cheaper iterative refinement.
+- Persist snapshot-to-snapshot diffs and move very large comparisons into a Web Worker.
 - Add per-user rate limits and usage telemetry around generation and proxy endpoints.
-- Expand the HighLevel bridge with carefully confirmed write operations and calendar availability.
-- Split Monaco and Firebase into lazy-loaded chunks to reduce the initial JavaScript bundle.
+- Add end-to-end sandbox fixtures for confirmed HighLevel writes and calendar availability.
+- Move Firebase Auth initialization behind a smaller bootstrap boundary to reduce the remaining initial vendor chunk.
 
 ## Deployment notes
 

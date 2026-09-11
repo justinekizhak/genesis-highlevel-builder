@@ -1,6 +1,7 @@
 {
   "name": "genesis-highlevel-builder",
   "private": true,
+  "packageManager": "pnpm@11.19.0",
   "scripts": {
     "install:all": "pnpm --dir frontend install && pnpm --dir functions install",
     "build": "pnpm --dir frontend build && pnpm --dir functions build",

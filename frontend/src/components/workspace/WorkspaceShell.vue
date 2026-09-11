@@ -1,20 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { VueMonacoEditor } from '@guolao/vue-monaco-editor'
-import {
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogOverlay,
-  DialogPortal,
-  DialogRoot,
-  DialogTitle,
-} from 'reka-ui'
+import { useQueryClient } from '@tanstack/vue-query'
 import {
   IconBraces,
   IconChevronDown,
   IconCode,
+  IconFileDiff,
   IconExternalLink,
   IconFileCode,
   IconHistory,
@@ -29,7 +21,19 @@ import {
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { buildSrcdoc } from '@/lib/srcdoc'
+import { buildGenerationDiff, type GenerationFileDiff } from '@/lib/generation-diff'
+import { animateEntrance, animateFeedback } from '@/lib/motion'
+import { useIntegrationStatusQuery } from '@/composables/server-state'
 import {
   generateApplication,
   initialDemoFiles,
@@ -43,13 +47,20 @@ import { useAuthStore } from '@/stores/auth'
 import { useHighLevelStore } from '@/stores/highlevel'
 import { useProjectsStore } from '@/stores/projects'
 import type { ChatMessage, GeneratedFile, GenerationEvent, ProjectSnapshot } from '@/types/generation'
-import { highLevelOperationSet, type HighLevelOperation, type HighLevelParameters } from '@/types/highlevel'
+import { highLevelOperationSet, highLevelWriteOperationSet, type HighLevelOperation, type HighLevelParameters } from '@/types/highlevel'
 
 const route = useRoute()
 const router = useRouter()
+const queryClient = useQueryClient()
 const projectsStore = useProjectsStore()
 const authStore = useAuthStore()
 const highLevelStore = useHighLevelStore()
+useIntegrationStatusQuery()
+const MonacoEditor = defineAsyncComponent({
+  loader: () => import('@guolao/vue-monaco-editor').then((module) => module.VueMonacoEditor),
+  loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
+})
+const workspaceRoot = ref<HTMLElement>()
 const files = ref<Record<string, GeneratedFile>>(structuredClone(initialDemoFiles))
 const activePath = ref('app.js')
 const messages = ref<ChatMessage[]>([
@@ -65,6 +76,13 @@ const generationError = ref('')
 const previewDocument = ref(buildSrcdoc(files.value))
 const previewFrame = ref<HTMLIFrameElement>()
 const bridgeError = ref('')
+const diffOpen = ref(false)
+const generationDiffs = ref<GenerationFileDiff[]>([])
+const pendingWriteRequest = ref<{
+  requestId: string
+  operation: HighLevelOperation
+  parameters: HighLevelParameters
+}>()
 const snapshotOpen = ref(false)
 const snapshots = ref<ProjectSnapshot[]>([])
 const snapshotLoading = ref(false)
@@ -80,6 +98,18 @@ let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
 let saveTimer: number | undefined
 const bridgeRequests = new Set<string>()
+let workspaceAnimation: { cancel?: () => void } | undefined
+
+const writeConfirmationLabels: Partial<Record<HighLevelOperation, string>> = {
+  'contacts.create': 'create a HighLevel contact',
+  'contacts.update': 'update a HighLevel contact',
+  'conversations.send': 'send a HighLevel message',
+}
+const writeConfirmationLabel = computed(() => (
+  pendingWriteRequest.value
+    ? writeConfirmationLabels[pendingWriteRequest.value.operation] ?? 'change HighLevel data'
+    : 'change HighLevel data'
+))
 
 const activeFile = computed(() => files.value[activePath.value])
 const fileList = computed(() => Object.values(files.value))
@@ -119,8 +149,9 @@ function parseBridgeRequest(event: MessageEvent) {
   const entries = Object.entries(raw)
   if (entries.length > 20 || entries.some(([key, value]) => (
     !/^[A-Za-z][A-Za-z0-9]*$/.test(key)
-    || !['string', 'number', 'undefined'].includes(typeof value)
-    || (typeof value === 'string' && value.length > 500)
+    || (!['string', 'number', 'boolean', 'undefined'].includes(typeof value) && !Array.isArray(value))
+    || (typeof value === 'string' && value.length > 5_000)
+    || (Array.isArray(value) && (value.length > 20 || value.some((item) => typeof item !== 'string' || item.length > 500)))
   ))) return
   return {
     requestId: data.requestId,
@@ -129,35 +160,70 @@ function parseBridgeRequest(event: MessageEvent) {
   }
 }
 
-async function handleHighLevelBridge(event: MessageEvent) {
-  const request = parseBridgeRequest(event)
-  if (!request || bridgeRequests.has(request.requestId) || bridgeRequests.size >= 8) return
-  bridgeRequests.add(request.requestId)
+function postBridgeResponse(requestId: string, response: { ok: true; data: unknown } | { ok: false; error: string }) {
+  previewFrame.value?.contentWindow?.postMessage({
+    channel: 'genesis.highlevel.v1', direction: 'response', requestId, ...response,
+  }, '*')
+}
+
+async function executeBridgeRequest(request: NonNullable<typeof pendingWriteRequest.value>) {
   bridgeError.value = ''
   try {
     const data = await highLevelStore.execute(request.operation, request.parameters)
-    previewFrame.value?.contentWindow?.postMessage({
-      channel: 'genesis.highlevel.v1', direction: 'response', requestId: request.requestId, ok: true, data,
-    }, '*')
+    postBridgeResponse(request.requestId, { ok: true, data })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'HighLevel request failed.'
     bridgeError.value = message
-    previewFrame.value?.contentWindow?.postMessage({
-      channel: 'genesis.highlevel.v1', direction: 'response', requestId: request.requestId, ok: false, error: message,
-    }, '*')
+    postBridgeResponse(request.requestId, { ok: false, error: message })
   } finally {
     bridgeRequests.delete(request.requestId)
   }
 }
 
+async function handleHighLevelBridge(event: MessageEvent) {
+  const request = parseBridgeRequest(event)
+  if (!request || bridgeRequests.has(request.requestId) || bridgeRequests.size >= 8) return
+  bridgeRequests.add(request.requestId)
+  if (highLevelWriteOperationSet.has(request.operation)) {
+    if (pendingWriteRequest.value) {
+      postBridgeResponse(request.requestId, { ok: false, error: 'Another HighLevel change is awaiting confirmation.' })
+      bridgeRequests.delete(request.requestId)
+      return
+    }
+    pendingWriteRequest.value = request
+    return
+  }
+  await executeBridgeRequest(request)
+}
+
+async function confirmHighLevelWrite() {
+  const request = pendingWriteRequest.value
+  pendingWriteRequest.value = undefined
+  if (request) await executeBridgeRequest(request)
+}
+
+function cancelHighLevelWrite() {
+  const request = pendingWriteRequest.value
+  pendingWriteRequest.value = undefined
+  if (!request) return
+  postBridgeResponse(request.requestId, { ok: false, error: 'HighLevel change cancelled by the user.' })
+  bridgeRequests.delete(request.requestId)
+}
+
 onMounted(async () => {
-  if (!projectsStore.projects.length) projectsStore.load()
   window.addEventListener('message', handleHighLevelBridge)
   try {
-    const [state] = await Promise.all([
-      loadApplicationState(projectId.value, await authStore.getIdToken()),
-      highLevelStore.loadStatus(),
-    ])
+    if (!projectsStore.projects.length) await queryClient.fetchQuery({
+      queryKey: ['projects', authStore.user?.uid ?? 'signed-out'],
+      queryFn: async () => {
+        await projectsStore.load()
+        return projectsStore.projects
+      },
+    }).catch(() => [])
+    const state = await queryClient.fetchQuery({
+      queryKey: ['project-state', projectId.value],
+      queryFn: async () => loadApplicationState(projectId.value, await authStore.getIdToken()),
+    })
     if (state?.files) {
       hydrateFiles(state.files)
       renderPreview()
@@ -167,12 +233,15 @@ onMounted(async () => {
   } catch (error) {
     generationError.value = error instanceof Error ? error.message : 'Could not load this project.'
   }
+  await nextTick()
+  workspaceAnimation = await animateEntrance(workspaceRoot.value?.querySelectorAll('.panel') ?? [], { y: { from: 8 }, delay: 0 })
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleHighLevelBridge)
   if (saveTimer) window.clearTimeout(saveTimer)
   controller?.abort()
+  workspaceAnimation?.cancel?.()
 })
 watch(() => highLevelStore.connection.connected, renderPreview)
 
@@ -208,7 +277,10 @@ async function openSnapshotHistory() {
   snapshotLoading.value = true
   snapshotError.value = ''
   try {
-    snapshots.value = await listApplicationSnapshots(projectId.value, await authStore.getIdToken())
+    snapshots.value = await queryClient.fetchQuery({
+      queryKey: ['project-snapshots', projectId.value],
+      queryFn: async () => listApplicationSnapshots(projectId.value, await authStore.getIdToken()),
+    })
   } catch (error) {
     snapshotError.value = error instanceof Error ? error.message : 'Could not load snapshot history.'
   } finally {
@@ -225,6 +297,8 @@ async function restoreSnapshot(snapshot: ProjectSnapshot) {
     const restored = await restoreApplicationSnapshot(projectId.value, snapshot.id, await authStore.getIdToken())
     hydrateFiles(restored.files)
     currentSnapshotId.value = restored.snapshotId
+    await queryClient.invalidateQueries({ queryKey: ['project-state', projectId.value] })
+    await queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
     renderPreview()
     snapshotOpen.value = false
   } catch (error) {
@@ -265,8 +339,10 @@ function handleEvent(event: GenerationEvent) {
     }
     case 'snapshot_created':
       currentSnapshotId.value = event.snapshotId
+      queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
       break
     case 'complete':
+      generationDiffs.value = filesBeforeGeneration ? buildGenerationDiff(filesBeforeGeneration, files.value) : []
       renderPreview()
       mobilePanel.value = 'preview'
       if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
@@ -325,11 +401,12 @@ function stopGeneration() {
 
 function refreshPreview() {
   renderPreview()
+  if (previewFrame.value) animateFeedback(previewFrame.value)
 }
 </script>
 
 <template>
-  <main class="app-shell">
+  <main ref="workspaceRoot" class="app-shell">
     <header class="topbar">
       <div class="brand">
         <div class="brand-mark"><IconBraces :size="18" :stroke-width="1.8" /></div>
@@ -346,6 +423,9 @@ function refreshPreview() {
 
       <div class="topbar-actions">
         <Badge :class="isGenerating ? 'status-badge active' : 'status-badge'">{{ statusLabel }}</Badge>
+        <Button v-if="generationDiffs.length" variant="ghost" size="sm" @click="diffOpen = true">
+          <IconFileDiff :size="16" />Changes
+        </Button>
         <Button variant="ghost" size="icon" aria-label="Open snapshot history" @click="openSnapshotHistory">
           <IconHistory :size="17" />
         </Button>
@@ -441,7 +521,7 @@ function refreshPreview() {
               <IconFileCode :size="14" />
               <span>{{ activePath }}</span>
             </div>
-            <VueMonacoEditor
+            <MonacoEditor
               v-if="activeFile"
               :value="activeFile.content"
               :language="activeFile.language"
@@ -489,18 +569,16 @@ function refreshPreview() {
       </section>
     </section>
 
-    <DialogRoot v-model:open="snapshotOpen">
-      <DialogPortal>
-        <DialogOverlay class="snapshot-backdrop" />
-        <DialogContent class="snapshot-dialog" aria-describedby="snapshot-description">
+    <Sheet v-model:open="snapshotOpen">
+        <SheetContent aria-describedby="snapshot-description">
         <div class="dialog-heading">
           <div>
-            <DialogTitle id="snapshot-title">Snapshot history</DialogTitle>
-            <DialogDescription id="snapshot-description">Every successful generation can be restored.</DialogDescription>
+            <SheetTitle id="snapshot-title">Snapshot history</SheetTitle>
+            <SheetDescription id="snapshot-description">Every successful generation can be restored.</SheetDescription>
           </div>
-          <DialogClose as-child>
+          <SheetClose as-child>
             <Button variant="ghost" size="icon" aria-label="Close snapshot history">×</Button>
-          </DialogClose>
+          </SheetClose>
         </div>
         <p v-if="snapshotLoading" class="snapshot-empty">Loading snapshots…</p>
         <p v-else-if="snapshotError" class="form-error" role="alert">{{ snapshotError }}</p>
@@ -526,16 +604,47 @@ function refreshPreview() {
             </Button>
           </article>
         </div>
-        </DialogContent>
-      </DialogPortal>
-    </DialogRoot>
+        </SheetContent>
+    </Sheet>
+
+    <Sheet v-model:open="diffOpen">
+      <SheetContent class="diff-dialog" aria-describedby="diff-description">
+        <div class="dialog-heading">
+          <div>
+            <SheetTitle>Generation changes</SheetTitle>
+            <SheetDescription id="diff-description">Line changes from the files that existed before the latest generation.</SheetDescription>
+          </div>
+          <SheetClose as-child><Button variant="ghost" size="icon" aria-label="Close generation changes">×</Button></SheetClose>
+        </div>
+        <p v-if="!generationDiffs.length" class="snapshot-empty">Generate a revision to see its changes.</p>
+        <div v-else class="diff-files">
+          <section v-for="file in generationDiffs" :key="file.path" class="diff-file">
+            <header><strong>{{ file.path }}</strong><span class="diff-added">+{{ file.added }}</span><span class="diff-removed">-{{ file.removed }}</span></header>
+            <pre aria-label="Line-by-line generation diff"><code><span v-for="(line, index) in file.lines" :key="`${file.path}-${index}`" class="diff-line" :class="`diff-${line.kind}`"><i>{{ line.kind === 'added' ? '+' : line.kind === 'removed' ? '-' : ' ' }}</i>{{ line.value || ' ' }}</span></code></pre>
+          </section>
+        </div>
+      </SheetContent>
+    </Sheet>
+
+    <AlertDialog :open="Boolean(pendingWriteRequest)" @update:open="(open) => { if (!open) cancelHighLevelWrite() }">
+      <AlertDialogContent aria-describedby="highlevel-write-description">
+        <AlertDialogTitle>Confirm HighLevel change</AlertDialogTitle>
+        <AlertDialogDescription id="highlevel-write-description">
+          This generated app wants to {{ writeConfirmationLabel }}. This changes data in the connected location and cannot be simulated in the preview.
+        </AlertDialogDescription>
+        <div class="dialog-actions">
+          <AlertDialogCancel as-child><Button variant="ghost" @click="cancelHighLevelWrite">Cancel</Button></AlertDialogCancel>
+          <AlertDialogAction as-child><Button @click="confirmHighLevelWrite">Confirm change</Button></AlertDialogAction>
+        </div>
+      </AlertDialogContent>
+    </AlertDialog>
 
     <footer class="statusbar">
       <span>{{ fileList.length }} files</span>
       <span v-if="currentSnapshotId">Snapshot ready</span>
       <span>{{ highLevelStore.connection.connected ? 'HighLevel live' : 'HighLevel demo data' }}</span>
       <span v-if="bridgeError" class="error-message">{{ bridgeError }}</span>
-      <span>{{ activeModel }} · {{ streamSourceLabel }}</span>
+      <span>{{ activeModel }} / {{ streamSourceLabel }}</span>
     </footer>
   </main>
 </template>

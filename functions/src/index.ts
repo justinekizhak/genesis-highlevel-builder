@@ -24,7 +24,7 @@ import {
   highLevelScopes,
 } from './highlevel/config.js'
 import { executeHighLevelOperation, highLevelOperations, type HighLevelOperation } from './highlevel/proxy.js'
-import { exchangeAuthorizationCode, saveConnection } from './highlevel/tokens.js'
+import { exchangeAuthorizationCode, fetchLocationName, getConnectionSummary, saveConnection } from './highlevel/tokens.js'
 import { AuthenticationError, requireFirebaseUser } from './http/auth.js'
 import { applyCors } from './http/cors.js'
 import { serializeSse } from './shared/protocol.js'
@@ -43,7 +43,13 @@ const generateRequestSchema = z.object({
 
 const proxyRequestSchema = z.object({
   operation: z.enum(Object.keys(highLevelOperations) as [HighLevelOperation, ...HighLevelOperation[]]),
-  parameters: z.record(z.string(), z.union([z.string(), z.number(), z.undefined()])).default({}),
+  parameters: z.record(z.string(), z.union([
+    z.string().max(5_000),
+    z.number().finite(),
+    z.boolean(),
+    z.array(z.string().max(500)).max(20),
+    z.undefined(),
+  ])).default({}),
 })
 
 const projectFilesSchema = z.object({
@@ -299,7 +305,8 @@ export const hlAuthCallback = onRequest(
         return data.uid
       })
       const tokens = await exchangeAuthorizationCode(code)
-      await saveConnection(uid, tokens)
+      const locationName = await fetchLocationName(tokens.access_token, tokens.locationId)
+      await saveConnection(uid, tokens, locationName)
       const connectedProjects = await db.collection('projects').where('ownerId', '==', uid).get()
       const projectBatch = db.batch()
       let projectUpdates = 0
@@ -327,13 +334,11 @@ export const hlConnectionStatus = onRequest({ region: 'us-central1', cors: false
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
   try {
     const user = await requireFirebaseUser(request)
-    const snapshot = await getFirestore().collection('highlevelConnections').doc(user.uid).get()
-    if (!snapshot.exists) return void response.json({ connected: false })
+    const connection = await getConnectionSummary(user.uid)
+    if (!connection) return void response.json({ connected: false })
     response.json({
       connected: true,
-      locationId: snapshot.get('locationId'),
-      locationName: snapshot.get('locationName') ?? 'Connected location',
-      connectedAt: snapshot.get('connectedAt')?.toDate?.().toISOString(),
+      ...connection,
     })
   } catch (cause) {
     httpError(response, cause)
@@ -348,14 +353,12 @@ export const integrationStatus = onRequest(
     if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
     try {
       const user = await requireFirebaseUser(request)
-      const connection = await getFirestore().collection('highlevelConnections').doc(user.uid).get()
+      const connection = await getConnectionSummary(user.uid)
       response.json({
         llm: { configured: Boolean(openAiApiKey.value()), model: openAiModel.value() },
-        highLevel: connection.exists ? {
+        highLevel: connection ? {
           connected: true,
-          locationId: connection.get('locationId'),
-          locationName: connection.get('locationName') ?? 'Connected location',
-          connectedAt: connection.get('connectedAt')?.toDate?.().toISOString(),
+          ...connection,
         } : { connected: false },
       })
     } catch (cause) {

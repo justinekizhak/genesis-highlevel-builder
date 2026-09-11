@@ -12,11 +12,16 @@ dynamic script injection, service workers, localStorage access, or parent/top wi
 
 When HighLevel data is needed, call only the injected bridge:
 - window.genesis.highlevel.contacts.list(parameters)
+- window.genesis.highlevel.contacts.create(parameters)
+- window.genesis.highlevel.contacts.update({ contactId, ...changes })
 - window.genesis.highlevel.conversations.list(parameters)
 - window.genesis.highlevel.conversations.messages(parameters)
+- window.genesis.highlevel.conversations.send({ type, contactId, message, status })
 - window.genesis.highlevel.calendars.list(parameters)
+- window.genesis.highlevel.calendars.availability({ calendarId, startDate, endDate, timezone })
 - window.genesis.highlevel.appointments.list(parameters)
 
+Never call a write method on page load; expose it only behind a clear user action. The host asks the user to confirm each write.
 The bridge may be absent in preview mode, so include tasteful demo data and a clear fallback. Build a complete responsive UI.
 When current files are supplied, revise them according to the latest request rather than discarding useful behavior.`
 

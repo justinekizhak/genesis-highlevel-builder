@@ -22,12 +22,20 @@ const highLevelBridge = `<script>
     event.data.ok ? request.resolve(event.data.data) : request.reject(new Error(event.data.error || 'HighLevel request failed.'));
   });
   window.genesis = Object.freeze({ highlevel: Object.freeze({
-    contacts: Object.freeze({ list: (parameters) => invoke('contacts.list', parameters) }),
+    contacts: Object.freeze({
+      list: (parameters) => invoke('contacts.list', parameters),
+      create: (parameters) => invoke('contacts.create', parameters),
+      update: (parameters) => invoke('contacts.update', parameters),
+    }),
     conversations: Object.freeze({
       list: (parameters) => invoke('conversations.list', parameters),
       messages: (parameters) => invoke('conversations.messages', parameters),
+      send: (parameters) => invoke('conversations.send', parameters),
     }),
-    calendars: Object.freeze({ list: (parameters) => invoke('calendars.list', parameters) }),
+    calendars: Object.freeze({
+      list: (parameters) => invoke('calendars.list', parameters),
+      availability: (parameters) => invoke('calendars.availability', parameters),
+    }),
     appointments: Object.freeze({ list: (parameters) => invoke('appointments.list', parameters) }),
   }) });
 })();

@@ -1,8 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import AuthView from '@/views/AuthView.vue'
-import DashboardView from '@/views/DashboardView.vue'
-import WorkspaceView from '@/views/WorkspaceView.vue'
 import { useAuthStore } from '@/stores/auth'
+
+const AuthView = () => import('@/views/AuthView.vue')
+const DashboardView = () => import('@/views/DashboardView.vue')
+const WorkspaceView = () => import('@/views/WorkspaceView.vue')
 
 const router = createRouter({
   history: createWebHistory(),

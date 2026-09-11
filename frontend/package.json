@@ -12,8 +12,11 @@
   "dependencies": {
     "@guolao/vue-monaco-editor": "^1.5.6",
     "@tabler/icons-vue": "^3.34.1",
+    "@tanstack/vue-query": "^5.102.8",
+    "animejs": "^4.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "diff": "^9.0.0",
     "firebase": "^12.1.0",
     "pinia": "^3.0.3",
     "reka-ui": "^2.4.1",

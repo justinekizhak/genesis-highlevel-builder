@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { getFirestore, Timestamp } from 'firebase-admin/firestore'
-import { highLevelApiBase, requireHighLevelConfig } from './config.js'
+import { highLevelApiBase, highLevelApiVersion, requireHighLevelConfig } from './config.js'
 
 type HighLevelConnection = {
   accessToken: string
@@ -42,13 +42,29 @@ export async function exchangeAuthorizationCode(code: string) {
   return response.json() as Promise<TokenResponse>
 }
 
-export async function saveConnection(uid: string, tokens: TokenResponse) {
+export async function fetchLocationName(accessToken: string, locationId: string) {
+  const response = await fetch(`${highLevelApiBase.value()}/locations/${encodeURIComponent(locationId)}`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      Version: highLevelApiVersion,
+    },
+  })
+  if (!response.ok) throw new Error(`HighLevel location lookup failed (${response.status}).`)
+  const body = await response.json() as { location?: { name?: string } }
+  const name = body.location?.name?.trim()
+  if (!name) throw new Error('HighLevel location lookup returned no name.')
+  return name
+}
+
+export async function saveConnection(uid: string, tokens: TokenResponse, locationName?: string) {
   const db = getFirestore()
   await db.collection('highlevelConnections').doc(uid).set({
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     expiresAt: Timestamp.fromMillis(Date.now() + tokens.expires_in * 1_000),
     locationId: tokens.locationId,
+    locationName: locationName ?? null,
     companyId: tokens.companyId ?? null,
     scope: tokens.scope ?? null,
     connectedAt: Timestamp.now(),
@@ -125,4 +141,24 @@ export async function getValidConnection(uid: string) {
   const connection = snapshot.data() as HighLevelConnection
   if (connection.expiresAt.toMillis() <= Date.now() + 60_000) return refreshConnection(uid)
   return connection
+}
+
+export async function getConnectionSummary(uid: string) {
+  const reference = getFirestore().collection('highlevelConnections').doc(uid)
+  const snapshot = await reference.get()
+  if (!snapshot.exists) return undefined
+  let connection = snapshot.data() as HighLevelConnection
+  connection = connection.expiresAt.toMillis() <= Date.now() + 60_000
+    ? await refreshConnection(uid)
+    : connection
+  if (!connection.locationName) {
+    const locationName = await fetchLocationName(connection.accessToken, connection.locationId)
+    await reference.update({ locationName, updatedAt: Timestamp.now() })
+    connection = { ...connection, locationName }
+  }
+  return {
+    locationId: connection.locationId,
+    locationName: connection.locationName,
+    connectedAt: snapshot.get('connectedAt')?.toDate?.().toISOString(),
+  }
 }
