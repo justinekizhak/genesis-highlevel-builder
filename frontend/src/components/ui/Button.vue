@@ -17,7 +17,7 @@ const props = withDefaults(
 const classes = computed(() =>
   cn(
     'inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium transition-[background-color,color,transform] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 disabled:pointer-events-none disabled:opacity-45 active:translate-y-px',
-    props.variant === 'default' && 'bg-amber-300 text-stone-950 hover:bg-amber-200',
+    props.variant === 'default' && 'bg-amber-300 text-stone-950 hover:bg-amber-200 disabled:bg-amber-200 disabled:text-stone-800',
     props.variant === 'secondary' && 'border border-stone-700 bg-stone-900 text-stone-100 hover:bg-stone-800',
     props.variant === 'ghost' && 'text-stone-400 hover:bg-stone-800 hover:text-stone-100',
     props.size === 'default' && 'h-9 px-4',

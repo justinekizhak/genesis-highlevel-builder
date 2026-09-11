@@ -2,10 +2,15 @@ node_modules/
 dist/
 .firebase/
 firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+*-debug.log
+gha-creds-*.json
 *.local
 .env
 .env.*
 !.env.example
+!functions/.env.jk-ai-app-builder
 frontend/.env
 frontend/.env.*
 !frontend/.env.example

@@ -1,0 +1,110 @@
+name: Firebase CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: firebase-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            functions/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Functions dependencies
+        run: pnpm --dir functions install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm run test
+
+  deploy:
+    name: Deploy production
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VITE_FUNCTIONS_BASE_URL: https://us-central1-jk-ai-app-builder.cloudfunctions.net
+      VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: jk-ai-app-builder.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: jk-ai-app-builder
+      VITE_FIREBASE_APP_ID: ${{ vars.VITE_FIREBASE_APP_ID }}
+      VITE_USE_FIREBASE_EMULATORS: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            frontend/pnpm-lock.yaml
+            functions/pnpm-lock.yaml
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: jk-ai-app-builder
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Validate production configuration
+        shell: bash
+        run: |
+          if [[ -z "$VITE_FIREBASE_API_KEY" || -z "$VITE_FIREBASE_APP_ID" ]]; then
+            echo "Missing VITE_FIREBASE_API_KEY or VITE_FIREBASE_APP_ID in the production GitHub environment."
+            exit 1
+          fi
+
+      - name: Install frontend dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Install Functions dependencies
+        run: pnpm --dir functions install --frozen-lockfile
+
+      - name: Build production application
+        run: pnpm run build
+
+      - name: Deploy Hosting, Functions, and Firestore configuration
+        run: pnpm dlx firebase-tools@15.29.0 deploy --only hosting,functions,firestore:rules,firestore:indexes --project jk-ai-app-builder --non-interactive

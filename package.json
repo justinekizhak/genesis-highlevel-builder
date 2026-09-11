@@ -6,7 +6,8 @@
     "build": "pnpm --dir frontend build && pnpm --dir functions build",
     "test": "pnpm --dir frontend test && pnpm --dir functions test",
     "dev:frontend": "pnpm --dir frontend dev",
-    "dev:emulators": "firebase emulators:start --only auth,firestore,functions",
-    "deploy": "firebase deploy"
+    "dev:emulators": "sh scripts/run-emulators.sh",
+    "emulators:export": "pnpm dlx firebase-tools emulators:export .firebase/emulator-data --project jk-ai-app-builder --force",
+    "deploy": "pnpm dlx firebase-tools deploy --project jk-ai-app-builder"
   }
 }

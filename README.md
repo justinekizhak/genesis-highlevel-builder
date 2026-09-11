@@ -37,7 +37,9 @@ To run against Firebase emulators:
 pnpm run dev:emulators
 ```
 
-Then set `VITE_FUNCTIONS_BASE_URL=http://127.0.0.1:5001/demo-genesis/us-central1` in `frontend/.env.local`.
+The emulator command restores data from `.firebase/emulator-data` when an export exists and writes Auth and Firestore data back there during a clean shutdown. Use `Ctrl+C` once and wait for the export to finish. The directory is intentionally gitignored because it can contain local users, OAuth tokens, and generated project data.
+
+Set `VITE_FUNCTIONS_BASE_URL=http://127.0.0.1:5001/jk-ai-app-builder/us-central1` in `frontend/.env.local` and always open the frontend at `http://127.0.0.1:5173` so Firebase Auth remains on the same origin throughout OAuth.
 
 ## Verification
 
@@ -77,6 +79,19 @@ firebase functions:secrets:set OPENAI_API_KEY
 `OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in the Firebase environment. During local emulator development, an absent secret falls back to the deterministic demo generator. Set the secret before deploying the generation function.
 
 Copy `functions/.env.example` to the Firebase project-specific environment file and fill in the non-secret values. Do not put either API secret in a dotenv file.
+
+## CI/CD
+
+`.github/workflows/firebase-deploy.yml` builds and tests every pull request targeting `main`. A push to `main`, or a manual workflow dispatch, deploys Firebase Hosting, Functions, Firestore rules, and indexes to `jk-ai-app-builder`.
+
+The deployment uses Google Cloud Workload Identity Federation instead of a long-lived Firebase token or service-account key. After adding a GitHub remote, create a GitHub environment named `production` with:
+
+- Repository/environment variables: `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_APP_ID`
+- Environment secrets: `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_DEPLOY_SERVICE_ACCOUNT`
+
+Restrict the Workload Identity provider to the exact GitHub repository and `main` branch, and grant its deployment service account only the permissions needed for Firebase Hosting, Cloud Functions, Firestore rules/indexes, Cloud Build, Artifact Registry, and service-account use. The runtime values for `OPENAI_API_KEY` and `HL_CLIENT_SECRET` remain in Google Secret Manager and are not copied into GitHub.
+
+The non-secret production Functions parameters are stored in `functions/.env.jk-ai-app-builder`. Local overrides and secrets remain gitignored.
 
 ## Next milestone
 
