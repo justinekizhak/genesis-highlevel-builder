@@ -55,6 +55,7 @@ pnpm run test
 
 ## Live URLs
 
+- Public repository: https://github.com/justinekizhak/genesis-highlevel-builder
 - Firebase Hosting: https://jk-ai-app-builder.web.app
 - Cloud Functions base URL: https://us-central1-jk-ai-app-builder.cloudfunctions.net
 - OAuth callback: https://us-central1-jk-ai-app-builder.cloudfunctions.net/hlAuthCallback
@@ -119,7 +120,7 @@ The workflow is ready to verify pull requests and deploy every push to `main`, b
 
 The Google service account must be allowed to deploy Firebase Hosting, Cloud Functions, Firestore rules/indexes, Cloud Build artifacts, and impersonate the runtime service account. Restrict the Workload Identity provider to this exact repository and the `main` branch.
 
-At the time of the latest audit, the local Firebase CLI is authenticated and the Firebase project, web app, Hosting site, `OPENAI_API_KEY`, and `HL_CLIENT_SECRET` all exist. Hosting and Function URLs still return 404, so the first production deployment has not completed. The local GitHub CLI account is present but its token is invalid; run `gh auth login -h github.com` before creating and pushing the public repository.
+At the time of the latest audit, the public repository and `production` environment exist, and its two Firebase frontend variables are configured. The local Firebase CLI is authenticated, and the Firebase project, web app, Hosting site, `OPENAI_API_KEY`, and `HL_CLIENT_SECRET` all exist. Hosting and Function URLs still return 404 because the first production deployment is waiting for the two Workload Identity secrets.
 
 ## Architecture decisions
 
@@ -150,6 +151,6 @@ The included GitHub Actions workflow uses Workload Identity Federation and deplo
 
 ## Submission checklist
 
-- Add the public GitHub repository URL.
+- Add the two Workload Identity secrets to the GitHub `production` environment.
 - Deploy and verify the URLs above.
 - Record the five-minute Loom walkthrough and add its URL here and to the submission email.
