@@ -22,27 +22,32 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<SessionUser | null>(null)
   const initializing = ref(true)
   const error = ref('')
-  const initialized = ref(false)
+  let initializationPromise: Promise<void> | null = null
 
   const isAuthenticated = computed(() => Boolean(user.value))
   const isDemoMode = computed(() => !firebaseEnabled)
 
-  async function initialize() {
-    if (initialized.value) return
-    initialized.value = true
+  function initialize() {
+    if (!initializationPromise) {
+      initializationPromise = (async () => {
+        if (!firebaseEnabled) {
+          initializing.value = false
+          return
+        }
 
-    if (!firebaseEnabled) {
-      initializing.value = false
-      return
+        const firebaseAuth = requireFirebaseAuth()
+
+        await new Promise<void>((resolve) => {
+          onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+            user.value = firebaseUser
+            initializing.value = false
+            resolve()
+          })
+        })
+      })()
     }
 
-    await new Promise<void>((resolve) => {
-      onAuthStateChanged(requireFirebaseAuth(), (firebaseUser) => {
-        user.value = firebaseUser
-        initializing.value = false
-        resolve()
-      })
-    })
+    return initializationPromise
   }
 
   async function signIn(email: string, password: string) {
