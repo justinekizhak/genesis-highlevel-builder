@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { IconArrowRight, IconBraces, IconShieldLock } from '@tabler/icons-vue'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
+import { getAuthErrorMessage } from '@/lib/auth-error'
 import { useAuthStore } from '@/stores/auth'
 
 const props = defineProps<{ mode: 'sign-in' | 'sign-up' }>()
@@ -26,7 +27,7 @@ async function submit() {
     else await auth.signIn(email.value.trim(), password.value)
     await router.replace(typeof route.query.redirect === 'string' ? route.query.redirect : '/projects')
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : 'Authentication failed.'
+    error.value = getAuthErrorMessage(cause, props.mode)
   } finally {
     busy.value = false
   }
