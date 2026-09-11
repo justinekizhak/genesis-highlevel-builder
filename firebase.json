@@ -21,7 +21,20 @@
         ]
       }
     ],
-    "rewrites": [{ "source": "**", "destination": "/index.html" }],
+    "rewrites": [
+      { "source": "/api/healthz", "function": { "functionId": "healthz", "region": "us-central1" } },
+      { "source": "/api/generateApp", "function": { "functionId": "generateApp", "region": "us-central1" } },
+      { "source": "/api/projectSnapshots", "function": { "functionId": "projectSnapshots", "region": "us-central1" } },
+      { "source": "/api/saveFiles", "function": { "functionId": "saveFiles", "region": "us-central1" } },
+      { "source": "/api/restoreSnapshot", "function": { "functionId": "restoreSnapshot", "region": "us-central1" } },
+      { "source": "/api/projectState", "function": { "functionId": "projectState", "region": "us-central1" } },
+      { "source": "/api/hlOAuthStart", "function": { "functionId": "hlOAuthStart", "region": "us-central1" } },
+      { "source": "/api/hlAuthCallback", "function": { "functionId": "hlAuthCallback", "region": "us-central1" } },
+      { "source": "/api/hlConnectionStatus", "function": { "functionId": "hlConnectionStatus", "region": "us-central1" } },
+      { "source": "/api/integrationStatus", "function": { "functionId": "integrationStatus", "region": "us-central1" } },
+      { "source": "/api/hlProxy", "function": { "functionId": "hlProxy", "region": "us-central1" } },
+      { "source": "**", "destination": "/index.html" }
+    ],
     "predeploy": ["pnpm --dir frontend build"]
   },
   "firestore": {

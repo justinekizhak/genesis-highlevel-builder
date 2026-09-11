@@ -59,8 +59,8 @@ pnpm run test
 
 - Public repository: https://github.com/justinekizhak/genesis-highlevel-builder
 - Firebase Hosting: https://jk-ai-app-builder.web.app
-- Cloud Functions base URL: https://us-central1-jk-ai-app-builder.cloudfunctions.net
-- OAuth callback: https://us-central1-jk-ai-app-builder.cloudfunctions.net/hlAuthCallback
+- Cloud Functions base URL: https://jk-ai-app-builder.web.app/api
+- OAuth callback: https://jk-ai-app-builder.web.app/api/hlAuthCallback
 
 After deployment, verify the Hosting URL and the `/healthz` Function before recording the demo.
 

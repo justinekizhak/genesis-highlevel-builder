@@ -58,7 +58,7 @@ jobs:
       contents: read
       id-token: write
     env:
-      VITE_FUNCTIONS_BASE_URL: https://us-central1-jk-ai-app-builder.cloudfunctions.net
+      VITE_FUNCTIONS_BASE_URL: https://jk-ai-app-builder.web.app/api
       VITE_FIREBASE_API_KEY: ${{ vars.VITE_FIREBASE_API_KEY }}
       VITE_FIREBASE_AUTH_DOMAIN: jk-ai-app-builder.firebaseapp.com
       VITE_FIREBASE_PROJECT_ID: jk-ai-app-builder
@@ -126,7 +126,7 @@ jobs:
 
           health_response="$(curl --fail --silent --show-error \
             --retry 18 --retry-all-errors --retry-delay 10 --max-time 20 \
-            https://us-central1-jk-ai-app-builder.cloudfunctions.net/healthz)"
+            https://jk-ai-app-builder.web.app/api/healthz)"
 
           if [[ "$health_response" != *'"status":"ok"'* ]]; then
             echo "Unexpected health check response: $health_response"
