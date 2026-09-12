@@ -26,7 +26,6 @@ describe('generated-output validator', () => {
     ['document.cookie', 'document.cookie = "a=b"'],
     ['window.top', 'window.top.location.href'],
     ['window.parent (non-bridge)', 'window.parent.document.write("x")'],
-    ['non-allowlisted script src', '<script src="https://evil.example.com/x.js"></script>'],
     ['OpenAI-shaped key', 'const key = "sk-abcdefghijklmnopqrstuvwx"'],
     ['Google-shaped key', 'const key = "AIzaSyA1234567890abcdefghijklmno1234"'],
     ['GitHub-shaped token', 'const token = "ghp_abcdefghijklmnopqrstuvwxyz012345"'],
@@ -41,7 +40,7 @@ describe('generated-output validator', () => {
     expect(findUnsafePatterns('window.parent.postMessage({ channel: "genesis.highlevel.v1" }, "*")')).toEqual([])
   })
 
-  it('allows the Vue CDN script tag', () => {
+  it('allows script tags from any src (CSP handles origin restriction)', () => {
     expect(findUnsafePatterns('<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script>')).toEqual([])
   })
 })

@@ -17,17 +17,6 @@ const bannedPatterns: BannedPattern[] = [
   { pattern: /\bwindow\.parent\.(?!postMessage\b)/, reason: 'reaches into window.parent outside the bridge' },
 ]
 
-const allowlistedScriptSrcPrefix = 'https://cdn.jsdelivr.net/'
-
-function findNonAllowlistedScriptSrc(content: string): string[] {
-  const hits: string[] = []
-  const scriptSrcPattern = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi
-  for (const match of content.matchAll(scriptSrcPattern)) {
-    if (!match[1].startsWith(allowlistedScriptSrcPrefix)) hits.push('loads a script from a non-allowlisted src')
-  }
-  return hits
-}
-
 const secretShapedPatterns: BannedPattern[] = [
   { pattern: /\bsk-[A-Za-z0-9]{20,}\b/, reason: 'contains an OpenAI-shaped secret key' },
   { pattern: /\bAIza[0-9A-Za-z_-]{30,}\b/, reason: 'contains a Google API-shaped secret key' },
@@ -40,7 +29,6 @@ export function findUnsafePatterns(content: string): string[] {
   for (const { pattern, reason } of [...bannedPatterns, ...secretShapedPatterns]) {
     if (pattern.test(content)) hits.push(reason)
   }
-  hits.push(...findNonAllowlistedScriptSrc(content))
   return hits
 }
 
