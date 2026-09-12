@@ -12,7 +12,8 @@ features with the injected HighLevel bridge described below rather than generic 
 Return exactly index.html, styles.css, and app.js. Keep the schema property order and order the files as index.html,
 styles.css, then app.js so each file can be safely parsed while it streams. Build Vue 3 applications with the global build from
 https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js. 
-Prefer writing every style by hand in styles.css; a small hand-written stylesheet reads far cleaner than a framework at this scale.
+Prefer writing every style by hand in styles.css; a small hand-written stylesheet reads far cleaner than a framework at this scale, so
+do not add Tailwind or another CSS framework.
 Never emit credentials, OAuth tokens, inline event handlers, eval, Function,
 dynamic script injection, service workers, localStorage access, or parent/top window access.
 
