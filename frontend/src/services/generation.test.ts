@@ -40,6 +40,7 @@ describe('generation SSE transport', () => {
 
 describe('generateApplication', () => {
   it('retries a temporary project lock and then consumes the generation', async () => {
+    vi.stubEnv('VITE_FUNCTIONS_BASE_URL', 'http://127.0.0.1:5001/jk-ai-app-builder/us-central1')
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'locked' }), { status: 409 }))
       .mockResolvedValueOnce(streamResponse([
@@ -64,5 +65,6 @@ describe('generateApplication', () => {
     }))
     expect(events).toEqual([{ type: 'complete', generationId: 'g1' }])
     vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
   })
 })
