@@ -89,5 +89,5 @@ export const useHighLevelStore = defineStore('highlevel', () => {
     return result.data
   }
 
-  return { connection, llm, loading, error, canConnect, loadStatus, connect, execute }
+  return { connection, llm, loading, error, canConnect, functionsBase, loadStatus, connect, execute }
 })

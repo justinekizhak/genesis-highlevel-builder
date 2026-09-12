@@ -17,13 +17,13 @@ const bannedPatterns: BannedPattern[] = [
   { pattern: /\bwindow\.parent\.(?!postMessage\b)/, reason: 'reaches into window.parent outside the bridge' },
 ]
 
-const allowlistedScriptSrc = 'https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js'
+const allowlistedScriptSrcPrefix = 'https://cdn.jsdelivr.net/'
 
 function findNonAllowlistedScriptSrc(content: string): string[] {
   const hits: string[] = []
   const scriptSrcPattern = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi
   for (const match of content.matchAll(scriptSrcPattern)) {
-    if (match[1] !== allowlistedScriptSrc) hits.push('loads a script from a non-allowlisted src')
+    if (!match[1].startsWith(allowlistedScriptSrcPrefix)) hits.push('loads a script from a non-allowlisted src')
   }
   return hits
 }

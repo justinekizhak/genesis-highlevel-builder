@@ -169,7 +169,6 @@ let saveTimer: number | undefined
 let savedIndicatorTimer: number | undefined
 let cancelFallbackTimer: number | undefined
 const bridgeRequests = new Set<string>()
-const externalPreviewChannels = new Map<string, BroadcastChannel>()
 let workspaceAnimation: { cancel?: () => void } | undefined
 
 const writeConfirmationLabels: Partial<Record<HighLevelOperation, string>> = {
@@ -452,8 +451,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleHighLevelBridge)
-  for (const channel of externalPreviewChannels.values()) channel.close()
-  externalPreviewChannels.clear()
   if (saveTimer) window.clearTimeout(saveTimer)
   if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
   if (cancelFallbackTimer) window.clearTimeout(cancelFallbackTimer)
@@ -790,45 +787,24 @@ function refreshPreview() {
   })
 }
 
-function openPreviewInNewTab() {
+async function openPreviewInNewTab() {
   bridgeError.value = ''
-  const channelName = `genesis-preview-${crypto.randomUUID()}`
-  const channel = new BroadcastChannel(channelName)
-  externalPreviewChannels.set(channelName, channel)
-  channel.addEventListener('message', (event) => {
-    const data = event.data as Record<string, unknown> | null
-    if (data?.channel === 'genesis.highlevel.v1' && data.direction === 'disconnect') {
-      if (pendingWriteRequest.value?.sourceId === channelName) {
-        bridgeRequests.delete(pendingWriteRequest.value.requestId)
-        pendingWriteRequest.value = undefined
-      }
-      channel.close()
-      externalPreviewChannels.delete(channelName)
-      return
-    }
-    void processHighLevelBridgeMessage(data, channelName, (response) => {
-      if (!externalPreviewChannels.has(channelName)) return
-      try {
-        channel.postMessage({
-          channel: 'genesis.highlevel.v1', direction: 'response', requestId: data?.requestId, ...response,
-        })
-      } catch {
-        // The standalone tab can close while a HighLevel request is in flight.
-      }
-    })
+  const opened = window.open('', '_blank')
+  if (!opened) {
+    bridgeError.value = 'The preview tab was blocked. Allow pop-ups for this site and try again.'
+    return
+  }
+  opened.opener = null
+  const highLevelDirectProxy = highLevelStore.connection.connected && highLevelStore.functionsBase
+    ? { functionsBase: highLevelStore.functionsBase, idToken: (await authStore.getIdToken()) ?? '' }
+    : undefined
+  const document = buildSrcdoc(files.value, {
+    enableHighLevelBridge: Boolean(highLevelDirectProxy),
+    highLevelDirectProxy,
   })
-  const document = buildSrcdoc(files.value, { enableHighLevelBridge: true, highLevelBridgeChannel: channelName })
   const blob = new Blob([document], { type: 'text/html' })
   const url = URL.createObjectURL(blob)
-  const opened = window.open('', '_blank')
-  if (opened) {
-    opened.opener = null
-    opened.location.href = url
-  } else {
-    channel.close()
-    externalPreviewChannels.delete(channelName)
-    bridgeError.value = 'The preview tab was blocked. Allow pop-ups for this site and try again.'
-  }
+  opened.location.href = url
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 
