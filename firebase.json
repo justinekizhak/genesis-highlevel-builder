@@ -25,6 +25,7 @@
       { "source": "/api/healthz", "function": { "functionId": "healthz", "region": "us-central1" } },
       { "source": "/api/generateApp", "function": { "functionId": "generateApp", "region": "us-central1" } },
       { "source": "/api/projectSnapshots", "function": { "functionId": "projectSnapshots", "region": "us-central1" } },
+      { "source": "/api/projectSnapshotFiles", "function": { "functionId": "projectSnapshotFiles", "region": "us-central1" } },
       { "source": "/api/saveFiles", "function": { "functionId": "saveFiles", "region": "us-central1" } },
       { "source": "/api/restoreSnapshot", "function": { "functionId": "restoreSnapshot", "region": "us-central1" } },
       { "source": "/api/projectState", "function": { "functionId": "projectState", "region": "us-central1" } },

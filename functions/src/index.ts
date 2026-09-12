@@ -9,6 +9,7 @@ import {
   listProjectSnapshots,
   loadGenerationContext,
   loadProjectState,
+  loadSnapshotFiles,
   persistGeneration,
   persistPartialGeneration,
   persistUserMessage,
@@ -58,6 +59,11 @@ const projectFilesSchema = z.object({
 })
 
 const restoreSnapshotSchema = z.object({
+  projectId: z.string().trim().min(1).max(128),
+  snapshotId: z.string().trim().min(1).max(128),
+})
+
+const snapshotFilesSchema = z.object({
   projectId: z.string().trim().min(1).max(128),
   snapshotId: z.string().trim().min(1).max(128),
 })
@@ -220,6 +226,19 @@ export const saveFiles = onRequest({ region: 'us-central1', cors: false }, async
     const input = projectFilesSchema.parse(request.body)
     const result = await saveProjectFiles(user.uid, input.projectId, input.files)
     response.json({ ok: true, snapshotId: result.snapshotId })
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
+
+export const projectSnapshotFiles = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const input = snapshotFilesSchema.parse(request.query)
+    response.json(await loadSnapshotFiles(user.uid, input.projectId, input.snapshotId))
   } catch (cause) {
     httpError(response, cause)
   }

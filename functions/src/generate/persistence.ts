@@ -169,6 +169,13 @@ export async function listProjectSnapshots(uid: string, projectId: string) {
   }))
 }
 
+export async function loadSnapshotFiles(uid: string, projectId: string, snapshotId: string) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  const snapshot = await projectReference.collection('snapshots').doc(snapshotId).get()
+  if (!snapshot.exists) throw new Error('Snapshot was not found.')
+  return { files: (snapshot.get('files') as Record<string, string> | undefined) ?? {} }
+}
+
 export async function saveProjectFiles(uid: string, projectId: string, files: Record<string, string>) {
   const projectReference = await requireOwnedProject(uid, projectId)
   const batch = getFirestore().batch()

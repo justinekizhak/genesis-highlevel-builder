@@ -55,8 +55,21 @@ function requireFunctionsBaseUrl() {
   return baseUrl
 }
 
+// Firebase Hosting buffers the entire response body for rewrites to Cloud Functions/Cloud Run,
+// which defeats SSE streaming even though the function itself flushes incrementally. Only the
+// streaming generateApp call needs to bypass Hosting and hit the Cloud Function directly; every
+// other endpoint here is a normal request/response and can keep going through the /api rewrite.
+function requireStreamingFunctionsBaseUrl() {
+  const override = import.meta.env.VITE_FUNCTIONS_STREAM_BASE_URL?.replace(/\/$/, '')
+  if (override) return override
+  if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') return requireFunctionsBaseUrl()
+  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID
+  if (!projectId) return requireFunctionsBaseUrl()
+  return `https://us-central1-${projectId}.cloudfunctions.net`
+}
+
 export async function generateApplication(options: GenerateOptions) {
-  const baseUrl = requireFunctionsBaseUrl()
+  const baseUrl = requireStreamingFunctionsBaseUrl()
   if (!options.idToken) throw new Error('Sign in again before generating.')
   const response = await fetch(`${baseUrl}/generateApp`, {
     method: 'POST',
@@ -118,6 +131,13 @@ export async function listApplicationSnapshots(projectId: string, idToken?: stri
   const query = new URLSearchParams({ projectId })
   const result = await authenticatedRequest<{ snapshots: ProjectSnapshot[] }>(`projectSnapshots?${query}`, idToken)
   return result.snapshots
+}
+
+export async function loadSnapshotFiles(projectId: string, snapshotId: string, idToken?: string): Promise<Record<string, string>> {
+  if (!idToken) throw new Error('Sign in again to load this snapshot.')
+  const query = new URLSearchParams({ projectId, snapshotId })
+  const result = await authenticatedRequest<{ files: Record<string, string> }>(`projectSnapshotFiles?${query}`, idToken)
+  return result.files
 }
 
 export async function restoreApplicationSnapshot(projectId: string, snapshotId: string, idToken?: string) {

@@ -4,28 +4,46 @@ function escapeClosingScript(value: string) {
   return value.replaceAll('</script>', '<\\/script>')
 }
 
-const highLevelBridge = `<script>
+function buildHighLevelBridge(broadcastChannelName?: string) {
+  const serializedChannelName = JSON.stringify(broadcastChannelName ?? '').replaceAll('<', '\\u003c')
+  return `<script>
 (() => {
   const channel = 'genesis.highlevel.v1';
+  const broadcastChannelName = ${serializedChannelName};
   let sequence = 0;
   const pending = new Map();
-  const hasBridgeHost = window.parent !== window;
+  const bridgeHost = window.parent !== window ? window.parent : null;
+  const broadcast = !bridgeHost && broadcastChannelName && 'BroadcastChannel' in window
+    ? new BroadcastChannel(broadcastChannelName)
+    : null;
   const invoke = (operation, parameters = {}) => new Promise((resolve, reject) => {
-    if (!hasBridgeHost) {
-      reject(new Error('HighLevel data is not available when the preview is opened in its own tab. Use the in-app preview panel for live HighLevel data.'));
+    if (!bridgeHost && !broadcast) {
+      reject(new Error('HighLevel data is unavailable because the preview lost its connection to Genesis. Reopen the preview from the builder.'));
       return;
     }
-    const requestId = String(++sequence) + '-' + Date.now();
+    const requestId = String(++sequence) + '-' + Date.now() + '-' + Math.random().toString(36).slice(2);
     pending.set(requestId, { resolve, reject });
-    window.parent.postMessage({ channel, direction: 'request', requestId, operation, parameters }, '*');
+    const message = { channel, direction: 'request', requestId, operation, parameters };
+    bridgeHost ? bridgeHost.postMessage(message, '*') : broadcast.postMessage(message);
   });
-  window.addEventListener('message', (event) => {
-    if (event.source !== window.parent || event.data?.channel !== channel || event.data?.direction !== 'response') return;
-    const request = pending.get(event.data.requestId);
+  const handleResponse = (data) => {
+    if (data?.channel !== channel || data?.direction !== 'response') return;
+    const request = pending.get(data.requestId);
     if (!request) return;
-    pending.delete(event.data.requestId);
-    event.data.ok ? request.resolve(event.data.data) : request.reject(new Error(event.data.error || 'HighLevel request failed.'));
+    pending.delete(data.requestId);
+    data.ok ? request.resolve(data.data) : request.reject(new Error(data.error || 'HighLevel request failed.'));
+  };
+  window.addEventListener('message', (event) => {
+    if (event.source !== bridgeHost) return;
+    handleResponse(event.data);
   });
+  if (broadcast) {
+    broadcast.addEventListener('message', (event) => handleResponse(event.data));
+    window.addEventListener('pagehide', () => {
+      broadcast.postMessage({ channel, direction: 'disconnect' });
+      broadcast.close();
+    }, { once: true });
+  }
   window.genesis = Object.freeze({ highlevel: Object.freeze({
     contacts: Object.freeze({
       list: (parameters) => invoke('contacts.list', parameters),
@@ -45,6 +63,7 @@ const highLevelBridge = `<script>
   }) });
 })();
 <\/script>`
+}
 
 const emptyPreviewMarkup = `<main class="genesis-empty-preview">
   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v18M3 12h18" stroke-linecap="round"/></svg>
@@ -52,7 +71,10 @@ const emptyPreviewMarkup = `<main class="genesis-empty-preview">
 </main>`
 const emptyPreviewStyles = `:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#141411;font-family:ui-sans-serif,system-ui,sans-serif}.genesis-empty-preview{display:grid;justify-items:center;gap:10px;color:#6f6c62;text-align:center;padding:24px}.genesis-empty-preview svg{color:#4a4740}.genesis-empty-preview p{margin:0;font-size:13px}`
 
-export function buildSrcdoc(files: Record<string, GeneratedFile>, options: { enableHighLevelBridge?: boolean } = {}) {
+export function buildSrcdoc(
+  files: Record<string, GeneratedFile>,
+  options: { enableHighLevelBridge?: boolean; highLevelBridgeChannel?: string } = {},
+) {
   const hasApp = Boolean(files['index.html'])
   const markup = files['index.html']?.content ?? emptyPreviewMarkup
   const styles = files['styles.css']?.content ?? (hasApp ? '' : emptyPreviewStyles)
@@ -68,7 +90,7 @@ export function buildSrcdoc(files: Record<string, GeneratedFile>, options: { ena
 </head>
 <body>
 ${markup}
-${options.enableHighLevelBridge ? highLevelBridge : ''}
+${options.enableHighLevelBridge ? buildHighLevelBridge(options.highLevelBridgeChannel) : ''}
 <script>${escapeClosingScript(script)}<\/script>
 </body>
 </html>`

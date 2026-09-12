@@ -27,6 +27,18 @@ describe('buildSrcdoc', () => {
     expect(result).toContain("invoke('conversations.send'")
     expect(result).toContain("invoke('calendars.availability'")
     expect(result).toContain("invoke('appointments.list'")
-    expect(result).toContain("event.source !== window.parent")
+    expect(result).toContain('event.source !== bridgeHost')
+  })
+
+  it('connects a standalone preview through an isolated broadcast channel', () => {
+    const result = buildSrcdoc({
+      'index.html': { path: 'index.html', content: '<main>Hello</main>', language: 'html' },
+      'app.js': { path: 'app.js', content: '', language: 'javascript' },
+    }, { enableHighLevelBridge: true, highLevelBridgeChannel: 'genesis-preview-test' })
+
+    expect(result).toContain('const broadcastChannelName = "genesis-preview-test"')
+    expect(result).toContain('new BroadcastChannel(broadcastChannelName)')
+    expect(result).toContain('broadcast.postMessage(message)')
+    expect(result).not.toContain('data is not available when the preview is opened in its own tab')
   })
 })

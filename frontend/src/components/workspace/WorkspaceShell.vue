@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { useRoute, useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import {
+  IconAlertTriangle,
   IconArrowLeft,
   IconBraces,
   IconChevronLeft,
@@ -21,6 +22,7 @@ import {
   IconRefresh,
   IconSend,
   IconSparkles,
+  IconX,
 } from '@tabler/icons-vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -41,10 +43,13 @@ import { buildSrcdoc } from '@/lib/srcdoc'
 import { buildGenerationDiff, type GenerationFileDiff } from '@/lib/generation-diff'
 import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
+import { useTypewriter } from '@/composables/typewriter'
+import DiffFileList from '@/components/workspace/DiffFileList.vue'
 import {
   generateApplication,
   listApplicationSnapshots,
   loadApplicationState,
+  loadSnapshotFiles,
   restoreApplicationSnapshot,
   saveApplicationFiles,
 } from '@/services/generation'
@@ -65,10 +70,17 @@ const MonacoEditor = defineAsyncComponent({
   loader: () => import('@guolao/vue-monaco-editor').then((module) => module.VueMonacoEditor),
   loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
 })
+const MonacoDiffEditor = defineAsyncComponent({
+  loader: () => import('@guolao/vue-monaco-editor').then((module) => module.VueMonacoDiffEditor),
+  loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
+})
 const workspaceRoot = ref<HTMLElement>()
+const messagesContainer = ref<HTMLElement>()
 const files = ref<Record<string, GeneratedFile>>({})
 const activePath = ref('')
 const openTabs = ref<string[]>([])
+const messageTypewriter = useTypewriter()
+const typingMessageId = ref<string>()
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -86,17 +98,30 @@ const previewFrameKey = ref(0)
 const bridgeError = ref('')
 const diffOpen = ref(false)
 const generationDiffs = ref<GenerationFileDiff[]>([])
-const pendingWriteRequest = ref<{
+const lastGenerationBefore = ref<Record<string, GeneratedFile>>()
+const showInlineDiff = ref(false)
+type BridgeResponse = { ok: true; data: unknown } | { ok: false; error: string }
+type BridgeRequest = {
   requestId: string
   operation: HighLevelOperation
   parameters: HighLevelParameters
-}>()
+  sourceId: string
+  respond: (response: BridgeResponse) => void
+}
+const pendingWriteRequest = ref<BridgeRequest>()
 const snapshotOpen = ref(false)
 const snapshots = ref<ProjectSnapshot[]>([])
 const snapshotLoading = ref(false)
 const snapshotError = ref('')
 const restoringSnapshotId = ref<string>()
+const expandedSnapshotId = ref<string>()
+const snapshotCompareDiff = ref<GenerationFileDiff[]>([])
+const snapshotCompareLoading = ref(false)
+const snapshotCompareError = ref('')
+const snapshotFilesCache = new Map<string, Record<string, string>>()
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const stoppedNotice = ref('')
+const filesTouchedThisGeneration = ref<string[]>([])
 const currentGenerationId = ref<string>()
 const currentSnapshotId = ref<string>()
 const activeModel = ref('Model pending')
@@ -114,7 +139,9 @@ const streamSourceLabel = 'Firebase stream'
 let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
 let saveTimer: number | undefined
+let savedIndicatorTimer: number | undefined
 const bridgeRequests = new Set<string>()
+const externalPreviewChannels = new Map<string, BroadcastChannel>()
 let workspaceAnimation: { cancel?: () => void } | undefined
 
 const writeConfirmationLabels: Partial<Record<HighLevelOperation, string>> = {
@@ -130,6 +157,7 @@ const writeConfirmationLabel = computed(() => (
 
 const activeFile = computed(() => files.value[activePath.value])
 const fileList = computed(() => Object.values(files.value))
+const activeFileDiff = computed(() => generationDiffs.value.find((file) => file.path === activePath.value))
 const statusLabel = computed(() => {
   if (generationError.value) return 'Needs attention'
   if (isGenerating.value) return 'Generating'
@@ -225,11 +253,10 @@ function hydrateFiles(source: Record<string, string>) {
 function openFile(path: string) {
   if (!openTabs.value.includes(path)) openTabs.value.push(path)
   activePath.value = path
+  showInlineDiff.value = false
 }
 
-function parseBridgeRequest(event: MessageEvent) {
-  if (event.source !== previewFrame.value?.contentWindow) return
-  const data = event.data as Record<string, unknown> | null
+function parseBridgeRequest(data: Record<string, unknown> | null, sourceId: string, respond: BridgeRequest['respond']) {
   if (!data || data.channel !== 'genesis.highlevel.v1' || data.direction !== 'request') return
   if (typeof data.requestId !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(data.requestId)) return
   if (typeof data.operation !== 'string' || !highLevelOperationSet.has(data.operation)) return
@@ -246,36 +273,40 @@ function parseBridgeRequest(event: MessageEvent) {
     requestId: data.requestId,
     operation: data.operation as HighLevelOperation,
     parameters: raw as HighLevelParameters,
+    sourceId,
+    respond,
   }
 }
 
-function postBridgeResponse(requestId: string, response: { ok: true; data: unknown } | { ok: false; error: string }) {
-  previewFrame.value?.contentWindow?.postMessage({
-    channel: 'genesis.highlevel.v1', direction: 'response', requestId, ...response,
-  }, '*')
+function postBridgeResponse(request: BridgeRequest, response: BridgeResponse) {
+  request.respond(response)
 }
 
 async function executeBridgeRequest(request: NonNullable<typeof pendingWriteRequest.value>) {
   bridgeError.value = ''
   try {
     const data = await highLevelStore.execute(request.operation, request.parameters)
-    postBridgeResponse(request.requestId, { ok: true, data })
+    postBridgeResponse(request, { ok: true, data })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'HighLevel request failed.'
     bridgeError.value = message
-    postBridgeResponse(request.requestId, { ok: false, error: message })
+    postBridgeResponse(request, { ok: false, error: message })
   } finally {
     bridgeRequests.delete(request.requestId)
   }
 }
 
-async function handleHighLevelBridge(event: MessageEvent) {
-  const request = parseBridgeRequest(event)
+async function processHighLevelBridgeMessage(
+  data: Record<string, unknown> | null,
+  sourceId: string,
+  respond: BridgeRequest['respond'],
+) {
+  const request = parseBridgeRequest(data, sourceId, respond)
   if (!request || bridgeRequests.has(request.requestId) || bridgeRequests.size >= 8) return
   bridgeRequests.add(request.requestId)
   if (highLevelWriteOperationSet.has(request.operation)) {
     if (pendingWriteRequest.value) {
-      postBridgeResponse(request.requestId, { ok: false, error: 'Another HighLevel change is awaiting confirmation.' })
+      postBridgeResponse(request, { ok: false, error: 'Another HighLevel change is awaiting confirmation.' })
       bridgeRequests.delete(request.requestId)
       return
     }
@@ -283,6 +314,16 @@ async function handleHighLevelBridge(event: MessageEvent) {
     return
   }
   await executeBridgeRequest(request)
+}
+
+async function handleHighLevelBridge(event: MessageEvent) {
+  if (event.source !== previewFrame.value?.contentWindow) return
+  const respond: BridgeRequest['respond'] = (response) => {
+    previewFrame.value?.contentWindow?.postMessage({
+      channel: 'genesis.highlevel.v1', direction: 'response', requestId: event.data?.requestId, ...response,
+    }, '*')
+  }
+  await processHighLevelBridgeMessage(event.data as Record<string, unknown> | null, 'iframe', respond)
 }
 
 async function confirmHighLevelWrite() {
@@ -295,7 +336,7 @@ function cancelHighLevelWrite() {
   const request = pendingWriteRequest.value
   pendingWriteRequest.value = undefined
   if (!request) return
-  postBridgeResponse(request.requestId, { ok: false, error: 'HighLevel change cancelled by the user.' })
+  postBridgeResponse(request, { ok: false, error: 'HighLevel change cancelled by the user.' })
   bridgeRequests.delete(request.requestId)
 }
 
@@ -330,11 +371,20 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleHighLevelBridge)
+  for (const channel of externalPreviewChannels.values()) channel.close()
+  externalPreviewChannels.clear()
   if (saveTimer) window.clearTimeout(saveTimer)
+  if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
   controller?.abort()
   workspaceAnimation?.cancel?.()
 })
 watch(() => highLevelStore.connection.connected, renderPreview)
+watch([() => messageTypewriter.revealedLength.value, () => messages.value.length], () => {
+  const container = messagesContainer.value
+  if (!container) return
+  const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
+  if (nearBottom) nextTick(() => { container.scrollTop = container.scrollHeight })
+})
 
 function updateActiveFile(content: string) {
   if (!activeFile.value || isGenerating.value) return
@@ -342,6 +392,7 @@ function updateActiveFile(content: string) {
   currentSnapshotId.value = undefined
   saveStatus.value = 'saving'
   if (saveTimer) window.clearTimeout(saveTimer)
+  if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
   saveTimer = window.setTimeout(persistManualFiles, 700)
 }
 
@@ -350,6 +401,10 @@ async function persistManualFiles(): Promise<boolean> {
     const { snapshotId } = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken(true))
     if (snapshotId) currentSnapshotId.value = snapshotId
     saveStatus.value = 'saved'
+    if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
+    savedIndicatorTimer = window.setTimeout(() => {
+      if (saveStatus.value === 'saved') saveStatus.value = 'idle'
+    }, 2500)
     renderPreview()
     return true
   } catch (error) {
@@ -363,6 +418,7 @@ async function openSnapshotHistory() {
   snapshotOpen.value = true
   snapshotLoading.value = true
   snapshotError.value = ''
+  expandedSnapshotId.value = undefined
   try {
     await queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
     snapshots.value = await queryClient.fetchQuery({
@@ -373,6 +429,45 @@ async function openSnapshotHistory() {
     snapshotError.value = error instanceof Error ? error.message : 'Could not load snapshot history.'
   } finally {
     snapshotLoading.value = false
+  }
+}
+
+function toGeneratedFiles(source: Record<string, string>): Record<string, GeneratedFile> {
+  return Object.fromEntries(Object.entries(source).map(([path, content]) => [path, {
+    path,
+    content,
+    language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html',
+  }]))
+}
+
+async function fetchSnapshotFiles(snapshotId: string) {
+  const cached = snapshotFilesCache.get(snapshotId)
+  if (cached) return cached
+  const fetched = await loadSnapshotFiles(projectId.value, snapshotId, await authStore.getIdToken(true))
+  snapshotFilesCache.set(snapshotId, fetched)
+  return fetched
+}
+
+async function toggleSnapshotCompare(snapshot: ProjectSnapshot, index: number) {
+  if (expandedSnapshotId.value === snapshot.id) {
+    expandedSnapshotId.value = undefined
+    return
+  }
+  expandedSnapshotId.value = snapshot.id
+  snapshotCompareError.value = ''
+  snapshotCompareDiff.value = []
+  snapshotCompareLoading.value = true
+  try {
+    const olderSnapshot = snapshots.value[index + 1]
+    const [olderFiles, newerFiles] = await Promise.all([
+      olderSnapshot ? fetchSnapshotFiles(olderSnapshot.id) : Promise.resolve({}),
+      fetchSnapshotFiles(snapshot.id),
+    ])
+    snapshotCompareDiff.value = buildGenerationDiff(toGeneratedFiles(olderFiles), toGeneratedFiles(newerFiles))
+  } catch (error) {
+    snapshotCompareError.value = error instanceof Error ? error.message : 'Could not load this comparison.'
+  } finally {
+    snapshotCompareLoading.value = false
   }
 }
 
@@ -396,6 +491,11 @@ async function restoreSnapshot(snapshot: ProjectSnapshot) {
   }
 }
 
+function messageText(message: ChatMessage) {
+  if (message.id !== typingMessageId.value) return message.content
+  return message.content.slice(0, messageTypewriter.revealedLength.value)
+}
+
 function handleEvent(event: GenerationEvent) {
   switch (event.type) {
     case 'generation_started':
@@ -404,14 +504,22 @@ function handleEvent(event: GenerationEvent) {
       break
     case 'token': {
       const last = messages.value.at(-1)
-      if (last?.role === 'assistant' && last.id === currentGenerationId.value) last.content += event.delta
-      else messages.value.push({ id: currentGenerationId.value ?? crypto.randomUUID(), role: 'assistant', content: event.delta })
+      if (last?.role === 'assistant' && last.id === currentGenerationId.value) {
+        last.content += event.delta
+      } else {
+        const created: ChatMessage = { id: currentGenerationId.value ?? crypto.randomUUID(), role: 'assistant', content: event.delta }
+        messages.value.push(created)
+        typingMessageId.value = created.id
+        messageTypewriter.reset()
+        messageTypewriter.start(() => created.content.length)
+      }
       break
     }
     case 'file_start':
       files.value[event.path] = { path: event.path, language: event.language, content: '' }
       openFile(event.path)
       mobilePanel.value = 'code'
+      if (!filesTouchedThisGeneration.value.includes(event.path)) filesTouchedThisGeneration.value.push(event.path)
       break
     case 'file_delta': {
       const file = files.value[event.path]
@@ -431,12 +539,18 @@ function handleEvent(event: GenerationEvent) {
       break
     case 'complete':
       generationDiffs.value = filesBeforeGeneration ? buildGenerationDiff(filesBeforeGeneration, files.value) : []
+      lastGenerationBefore.value = filesBeforeGeneration
+      showInlineDiff.value = generationDiffs.value.some((file) => file.path === activePath.value)
       renderPreview()
       mobilePanel.value = 'preview'
       filesBeforeGeneration = undefined
+      messageTypewriter.finish()
+      typingMessageId.value = undefined
       break
     case 'error':
       generationError.value = event.message
+      messageTypewriter.finish()
+      typingMessageId.value = undefined
       break
   }
 }
@@ -452,6 +566,9 @@ async function submitPrompt(suggestion?: string) {
   if ((saveStatus.value === 'saving' || saveStatus.value === 'error') && !await persistManualFiles()) return
   prompt.value = ''
   generationError.value = ''
+  stoppedNotice.value = ''
+  filesTouchedThisGeneration.value = []
+  showInlineDiff.value = false
   isGenerating.value = true
   messages.value.push({ id: crypto.randomUUID(), role: 'user', content: value })
   filesBeforeGeneration = cloneFiles(files.value)
@@ -481,7 +598,9 @@ function stopGeneration() {
   controller?.abort()
   filesBeforeGeneration = undefined
   isGenerating.value = false
-  generationError.value = 'Generation stopped. Partial output has been preserved in the editor.'
+  messageTypewriter.finish()
+  typingMessageId.value = undefined
+  stoppedNotice.value = `Stopped after ${filesTouchedThisGeneration.value.length} file${filesTouchedThisGeneration.value.length === 1 ? '' : 's'}. Nothing lost — partial output stays in the editor.`
 }
 
 function refreshPreview() {
@@ -494,11 +613,43 @@ function refreshPreview() {
 
 function openPreviewInNewTab() {
   bridgeError.value = ''
-  const blob = new Blob([buildSrcdoc(files.value, { enableHighLevelBridge: true })], { type: 'text/html' })
+  const channelName = `genesis-preview-${crypto.randomUUID()}`
+  const channel = new BroadcastChannel(channelName)
+  externalPreviewChannels.set(channelName, channel)
+  channel.addEventListener('message', (event) => {
+    const data = event.data as Record<string, unknown> | null
+    if (data?.channel === 'genesis.highlevel.v1' && data.direction === 'disconnect') {
+      if (pendingWriteRequest.value?.sourceId === channelName) {
+        bridgeRequests.delete(pendingWriteRequest.value.requestId)
+        pendingWriteRequest.value = undefined
+      }
+      channel.close()
+      externalPreviewChannels.delete(channelName)
+      return
+    }
+    void processHighLevelBridgeMessage(data, channelName, (response) => {
+      if (!externalPreviewChannels.has(channelName)) return
+      try {
+        channel.postMessage({
+          channel: 'genesis.highlevel.v1', direction: 'response', requestId: data?.requestId, ...response,
+        })
+      } catch {
+        // The standalone tab can close while a HighLevel request is in flight.
+      }
+    })
+  })
+  const document = buildSrcdoc(files.value, { enableHighLevelBridge: true, highLevelBridgeChannel: channelName })
+  const blob = new Blob([document], { type: 'text/html' })
   const url = URL.createObjectURL(blob)
-  const opened = window.open(url, '_blank')
-  if (opened) opened.opener = null
-  else bridgeError.value = 'The preview tab was blocked. Allow pop-ups for this site and try again.'
+  const opened = window.open('', '_blank')
+  if (opened) {
+    opened.opener = null
+    opened.location.href = url
+  } else {
+    channel.close()
+    externalPreviewChannels.delete(channelName)
+    bridgeError.value = 'The preview tab was blocked. Allow pop-ups for this site and try again.'
+  }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 </script>
@@ -523,14 +674,15 @@ function openPreviewInNewTab() {
       </button>
 
       <div class="topbar-actions">
-        <button
-          v-if="generationError"
-          class="status-badge status-button attention"
-          type="button"
-          aria-label="Show issue details"
-          @click="attentionOpen = true"
-        >{{ statusLabel }}</button>
-        <Badge v-else variant="secondary" :class="isGenerating ? 'status-badge active' : 'status-badge'">{{ statusLabel }}</Badge>
+        <Badge
+          variant="secondary"
+          :as="generationError ? 'button' : undefined"
+          :type="generationError ? 'button' : undefined"
+          :aria-label="generationError ? 'Show issue details' : undefined"
+          class="status-badge"
+          :class="{ active: isGenerating, attention: generationError }"
+          @click="generationError ? (attentionOpen = true) : undefined"
+        >{{ statusLabel }}</Badge>
         <Button v-if="generationDiffs.length" variant="ghost" size="sm" @click="diffOpen = true">
           <IconFileDiff :size="16" />Changes
         </Button>
@@ -571,18 +723,19 @@ function openPreviewInNewTab() {
           </Button>
         </div>
 
-        <div class="messages" aria-live="polite">
+        <div ref="messagesContainer" class="messages" aria-live="polite">
           <article v-for="message in messages" :key="message.id" class="message" :class="message.role">
             <span>{{ message.role === 'assistant' ? 'Genesis' : 'You' }}</span>
-            <p>{{ message.content }}</p>
+            <p>{{ messageText(message) }}<i v-if="message.id === typingMessageId" class="typing-cursor" /></p>
           </article>
 
           <div v-if="isGenerating" class="generation-progress">
             <IconSparkles :size="15" />
-            <span>Writing {{ activePath }}</span>
+            <span>Writing file {{ filesTouchedThisGeneration.length }} · {{ activePath }}</span>
           </div>
 
           <p v-if="generationError" class="error-message">{{ generationError }}</p>
+          <p v-if="stoppedNotice" class="stopped-notice">{{ stoppedNotice }}</p>
         </div>
 
         <div v-if="!highLevelStore.connection.connected" class="connect-gate">
@@ -592,32 +745,34 @@ function openPreviewInNewTab() {
           </Button>
         </div>
 
-        <div class="suggestions">
-          <button :disabled="!highLevelStore.connection.connected" @click="submitPrompt('Build a contact dashboard with search and upcoming appointments')">Contact dashboard</button>
-          <button :disabled="!highLevelStore.connection.connected" @click="submitPrompt('Show recent conversations and unread messages')">Conversation inbox</button>
-          <button :disabled="!highLevelStore.connection.connected" @click="submitPrompt('Show this week\'s calendar availability and upcoming appointments')">Calendar view</button>
-        </div>
-
-        <form class="composer" @submit.prevent="submitPrompt()">
-          <label for="prompt">Describe the app</label>
-          <Textarea
-            id="prompt"
-            v-model="prompt"
-            aria-label="Describe the HighLevel app to generate"
-            placeholder="Build a contact dashboard with search..."
-            :disabled="isGenerating || !highLevelStore.connection.connected"
-            @keydown.enter.exact.prevent="submitPrompt()"
-          />
-          <div class="composer-footer">
-            <span>Enter to send, Shift + Enter for a new line</span>
-            <Button v-if="isGenerating" type="button" variant="secondary" size="icon" aria-label="Stop generation" @click="stopGeneration">
-              <IconPlayerStop :size="15" />
-            </Button>
-            <Button v-else type="submit" size="icon" aria-label="Generate app" :disabled="!prompt.trim() || !highLevelStore.connection.connected">
-              <IconSend :size="16" />
-            </Button>
+        <template v-else>
+          <div class="suggestions">
+            <button @click="submitPrompt('Build a contact dashboard with search and upcoming appointments')">Contact dashboard</button>
+            <button @click="submitPrompt('Show recent conversations and unread messages')">Conversation inbox</button>
+            <button @click="submitPrompt('Show this week\'s calendar availability and upcoming appointments')">Calendar view</button>
           </div>
-        </form>
+
+          <form class="composer" @submit.prevent="submitPrompt()">
+            <label for="prompt">Describe the app</label>
+            <Textarea
+              id="prompt"
+              v-model="prompt"
+              aria-label="Describe the HighLevel app to generate"
+              placeholder="Build a contact dashboard with search..."
+              :disabled="isGenerating"
+              @keydown.enter.exact.prevent="submitPrompt()"
+            />
+            <div class="composer-footer">
+              <span>Enter to send, Shift + Enter for a new line</span>
+              <Button v-if="isGenerating" type="button" variant="secondary" size="icon" aria-label="Stop generation" @click="stopGeneration">
+                <IconPlayerStop :size="15" />
+              </Button>
+              <Button v-else type="submit" size="icon" aria-label="Generate app" :disabled="!prompt.trim()">
+                <IconSend :size="16" />
+              </Button>
+            </div>
+          </form>
+        </template>
       </aside>
 
       <section class="panel code-panel" :class="{ 'mobile-active': mobilePanel === 'code', 'is-collapsed': codeCollapsed }">
@@ -637,6 +792,18 @@ function openPreviewInNewTab() {
             <span v-else-if="saveStatus === 'saving'" class="read-only-label">Saving edit...</span>
             <span v-else-if="saveStatus === 'saved'" class="read-only-label">Saved</span>
             <span v-else-if="saveStatus === 'error'" class="read-only-label error-message">Save failed</span>
+            <Button
+              v-if="activeFileDiff"
+              variant="ghost"
+              size="sm"
+              :class="{ 'diff-toggle-active': showInlineDiff }"
+              aria-label="Toggle inline diff for this file"
+              @click="showInlineDiff = !showInlineDiff"
+            >
+              <IconFileDiff :size="14" />
+              <span class="diff-added">+{{ activeFileDiff.added }}</span>
+              <span class="diff-removed">-{{ activeFileDiff.removed }}</span>
+            </Button>
             <Button variant="ghost" size="icon" aria-label="Collapse code editor" title="Collapse code editor" @click="toggleCodePanel">
               <IconChevronLeft :size="16" />
             </Button>
@@ -666,8 +833,26 @@ function openPreviewInNewTab() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+            <MonacoDiffEditor
+              v-if="activeFile && showInlineDiff && activeFileDiff"
+              :original="lastGenerationBefore?.[activePath]?.content ?? ''"
+              :modified="activeFile.content"
+              :language="activeFile.language"
+              theme="vs-dark"
+              :options="{
+                automaticLayout: true,
+                minimap: { enabled: false },
+                fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
+                fontSize: 13,
+                lineHeight: 21,
+                readOnly: true,
+                renderSideBySide: false,
+                scrollBeyondLastLine: false,
+                renderLineHighlight: 'gutter',
+              }"
+            />
             <MonacoEditor
-              v-if="activeFile"
+              v-else-if="activeFile"
               :value="activeFile.content"
               :language="activeFile.language"
               theme="vs-dark"
@@ -730,6 +915,16 @@ function openPreviewInNewTab() {
           </div>
         </div>
         <div class="preview-stage">
+          <div v-if="bridgeError" class="bridge-alert" role="alert">
+            <IconAlertTriangle :size="16" />
+            <div>
+              <strong>HighLevel request failed</strong>
+              <p>{{ bridgeError }}</p>
+            </div>
+            <Button variant="ghost" size="icon" aria-label="Dismiss" @click="bridgeError = ''">
+              <IconX :size="14" />
+            </Button>
+          </div>
           <div v-if="isGenerating" class="preview-mask">
             <IconSparkles :size="18" />
             <span>Preview updates when generation completes</span>
@@ -757,26 +952,47 @@ function openPreviewInNewTab() {
         <p v-else-if="snapshotError" class="form-error" role="alert">{{ snapshotError }}</p>
         <p v-else-if="!snapshots.length" class="snapshot-empty">No snapshots yet. Generate an app to create the first one.</p>
         <div v-else class="snapshot-list">
-          <article v-for="snapshot in snapshots" :key="snapshot.id" class="snapshot-row">
-            <div>
-              <div class="snapshot-meta">
-                <strong>{{ new Date(snapshot.createdAt).toLocaleString() }}</strong>
-                <Badge v-if="snapshot.id === currentSnapshotId">Current</Badge>
-                <Badge v-else variant="secondary">{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.kind === 'manual' ? 'Manual edit' : snapshot.provider }}</Badge>
+          <div v-for="(snapshot, index) in snapshots" :key="snapshot.id" class="snapshot-entry">
+            <article class="snapshot-row">
+              <div>
+                <div class="snapshot-meta">
+                  <strong>{{ new Date(snapshot.createdAt).toLocaleString() }}</strong>
+                  <Badge v-if="snapshot.id === currentSnapshotId">Current</Badge>
+                  <Badge v-else variant="secondary">{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.kind === 'manual' ? 'Manual edit' : snapshot.provider }}</Badge>
+                </div>
+                <p v-if="snapshot.prompt"><strong>Request:</strong> {{ snapshot.prompt }}</p>
+                <p v-if="snapshot.summary"><strong>Result:</strong> {{ snapshot.summary }}</p>
+                <span>{{ snapshot.fileCount }} files, {{ snapshot.provider }}</span>
               </div>
-              <p v-if="snapshot.prompt"><strong>Request:</strong> {{ snapshot.prompt }}</p>
-              <p v-if="snapshot.summary"><strong>Result:</strong> {{ snapshot.summary }}</p>
-              <span>{{ snapshot.fileCount }} files, {{ snapshot.provider }}</span>
+              <div class="snapshot-row-actions">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :class="{ 'diff-toggle-active': expandedSnapshotId === snapshot.id }"
+                  @click="toggleSnapshotCompare(snapshot, index)"
+                >
+                  <IconFileDiff :size="14" />{{ expandedSnapshotId === snapshot.id ? 'Hide diff' : 'Compare' }}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  :disabled="snapshot.id === currentSnapshotId || Boolean(restoringSnapshotId)"
+                  @click="restoreSnapshot(snapshot)"
+                >
+                  {{ restoringSnapshotId === snapshot.id ? 'Restoring…' : 'Restore' }}
+                </Button>
+              </div>
+            </article>
+            <div v-if="expandedSnapshotId === snapshot.id" class="snapshot-compare">
+              <p v-if="snapshotCompareLoading" class="snapshot-empty">Loading comparison…</p>
+              <p v-else-if="snapshotCompareError" class="form-error" role="alert">{{ snapshotCompareError }}</p>
+              <DiffFileList
+                v-else
+                :files="snapshotCompareDiff"
+                :empty-message="index === snapshots.length - 1 ? 'This is the first snapshot; nothing came before it.' : 'No file changes between these two snapshots.'"
+              />
             </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              :disabled="snapshot.id === currentSnapshotId || Boolean(restoringSnapshotId)"
-              @click="restoreSnapshot(snapshot)"
-            >
-              {{ restoringSnapshotId === snapshot.id ? 'Restoring…' : 'Restore' }}
-            </Button>
-          </article>
+          </div>
         </div>
         </SheetContent>
     </Sheet>
@@ -827,13 +1043,7 @@ function openPreviewInNewTab() {
             <SheetDescription id="diff-description">Line changes from the files that existed before the latest generation.</SheetDescription>
           </div>
         </div>
-        <p v-if="!generationDiffs.length" class="snapshot-empty">Generate a revision to see its changes.</p>
-        <div v-else class="diff-files">
-          <section v-for="file in generationDiffs" :key="file.path" class="diff-file">
-            <header><strong>{{ file.path }}</strong><span class="diff-added">+{{ file.added }}</span><span class="diff-removed">-{{ file.removed }}</span></header>
-            <pre aria-label="Line-by-line generation diff"><code><span v-for="(line, index) in file.lines" :key="`${file.path}-${index}`" class="diff-line" :class="`diff-${line.kind}`"><i>{{ line.kind === 'added' ? '+' : line.kind === 'removed' ? '-' : ' ' }}</i>{{ line.value || ' ' }}</span></code></pre>
-          </section>
-        </div>
+        <DiffFileList :files="generationDiffs" empty-message="Generate a revision to see its changes." />
       </SheetContent>
     </Sheet>
 
@@ -854,7 +1064,6 @@ function openPreviewInNewTab() {
       <span>{{ fileList.length }} files</span>
       <span v-if="currentSnapshotId">Snapshot ready</span>
       <span>{{ highLevelStore.connection.connected ? 'HighLevel live' : 'HighLevel not connected' }}</span>
-      <span v-if="bridgeError" class="error-message">{{ bridgeError }}</span>
       <span>{{ activeModel }} / {{ streamSourceLabel }}</span>
     </footer>
   </main>

@@ -33,7 +33,19 @@ whatever it returns. Never fabricate, hardcode, or fall back to placeholder cont
 call fails, show a clear loading or error state instead of invented data. Build a complete responsive UI.
 For appointments, first list calendars, choose a calendar ID, and pass millisecond startTime and endTime values.
 Treat all CRM strings as untrusted. Render them with textContent or DOM node construction, never innerHTML interpolation.
-When current files are supplied, revise them according to the latest request rather than discarding useful behavior.`
+When current files are supplied, revise them according to the latest request rather than discarding useful behavior.
+
+Match the visual style of the Genesis host application so the generated app feels native to it, not like a generic template:
+- Always dark mode. Background #11110f, raised surfaces/cards #1d1c18, secondary surface #201f1b. Body text #eeeae0, muted/secondary text #8c8980.
+- One accent color throughout: #e8bd62 (warm amber/gold), with #1b1914 as its foreground (text/icon color on top of an accent-filled surface). Use the accent sparingly: primary actions, active/selected states, focus rings, key numbers or icons. Do not add other bright hues.
+- Hairline 1px borders in #34332d to separate panels, rows, and cards, instead of shadows or heavy dividers.
+- Rounded corners everywhere: 6-7px on buttons/inputs/small controls, 8-10px on cards/panels/modals. Never sharp corners, never fully pill-shaped buttons.
+- Compact spacing: 8-16px padding inside controls and cards, 4-8px gaps between related elements. Keep density high; avoid oversized whitespace.
+- Typography: a clean system/sans font for body copy and headings; a monospace font (ui-monospace or similar) for labels, badges, timestamps, and metadata, often uppercase with letter-spacing for small (10-11px) tags.
+- Buttons: subtle by default (transparent or #201f1b background, #34332d border), filled with the accent color only for the single primary action in a view. Small icon buttons should be ghost-style (no border/background until hover).
+- Inputs: #1d1c18 or #201f1b background, 1px #34332d border, accent-colored border/ring on focus, no heavy inset shadows.
+- Feedback colors stay muted and desaturated: success/positive greenish, error/destructive #b3453f-family red, both used only for small badges, borders, or text, never large blocks of saturated color.
+Build every screen (empty states, loading states, lists, forms) inside this single dark, amber-accented, high-density, rounded, hairline-bordered visual language.`
 
 type OpenAiStreamEvent = {
   type?: string
