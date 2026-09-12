@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { IconFileDiff, IconHistory, IconX } from '@tabler/icons-vue'
+import { IconArchive, IconClockPause, IconFileDiff, IconHistory, IconPencil, IconSparkles, IconX } from '@tabler/icons-vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import DiffFileList from '@/components/workspace/DiffFileList.vue'
 import type { GenerationFileDiff } from '@/lib/generation-diff'
 import type { ProjectSnapshot } from '@/types/generation'
@@ -36,8 +37,19 @@ const kindLabels: Record<string, string> = {
   partial: 'Partial',
 }
 
+const kindIcons: Record<string, typeof IconSparkles> = {
+  generation: IconSparkles,
+  manual: IconPencil,
+  backup: IconArchive,
+  partial: IconClockPause,
+}
+
 function kindLabel(snapshot: ProjectSnapshot) {
   return (snapshot.kind && kindLabels[snapshot.kind]) ?? snapshot.provider
+}
+
+function kindIcon(snapshot: ProjectSnapshot) {
+  return (snapshot.kind && kindIcons[snapshot.kind]) ?? IconSparkles
 }
 
 function relativeTime(iso: string) {
@@ -140,27 +152,34 @@ function pasteAsPlainText(event: ClipboardEvent) {
         <strong>Saved versions</strong>
         <span>{{ snapshots.length }}</span>
       </div>
-      <ol class="snapshot-list">
-        <li v-for="(snapshot, index) in snapshots" :key="snapshot.id">
-          <button
-            type="button"
-            class="snapshot-list-item"
-            :class="{ 'is-selected': snapshot.id === props.expandedSnapshotId, 'is-current': snapshot.id === props.currentSnapshotId }"
-            :aria-current="snapshot.id === props.currentSnapshotId ? 'true' : undefined"
-            @click="snapshot.id !== props.expandedSnapshotId && emit('compare', snapshot, index)"
-          >
-            <span class="snapshot-list-marker" :class="`kind-${snapshot.kind}`" :title="kindLabel(snapshot)" />
-            <span class="snapshot-list-content">
-              <span class="snapshot-list-meta">
-                <time :title="fullTimestamp(snapshot.createdAt)">{{ relativeTime(snapshot.createdAt) }}</time>
+      <TooltipProvider :delay-duration="150">
+        <ol class="snapshot-list">
+          <li v-for="(snapshot, index) in snapshots" :key="snapshot.id">
+            <button
+              type="button"
+              class="snapshot-list-item"
+              :class="{ 'is-selected': snapshot.id === props.expandedSnapshotId, 'is-current': snapshot.id === props.currentSnapshotId }"
+              :aria-current="snapshot.id === props.currentSnapshotId ? 'true' : undefined"
+              @click="snapshot.id !== props.expandedSnapshotId && emit('compare', snapshot, index)"
+            >
+              <Tooltip>
+                <TooltipTrigger as="span" class="snapshot-list-marker" :class="`kind-${snapshot.kind}`">
+                  <component :is="kindIcon(snapshot)" :size="13" :stroke-width="2" />
+                </TooltipTrigger>
+                <TooltipContent side="top">{{ kindLabel(snapshot) }}</TooltipContent>
+              </Tooltip>
+              <span class="snapshot-list-content">
                 <Badge v-if="snapshot.id === props.currentSnapshotId" class="snapshot-current-badge">Current</Badge>
+                <strong>{{ snapshotMessage(snapshot) }}</strong>
+                <span class="snapshot-list-footer">
+                  <time :title="fullTimestamp(snapshot.createdAt)">{{ relativeTime(snapshot.createdAt) }}</time>
+                  <span>{{ snapshot.fileCount }} files</span>
+                </span>
               </span>
-              <strong>{{ snapshotMessage(snapshot) }}</strong>
-              <span>{{ snapshot.fileCount }} files</span>
-            </span>
-          </button>
-        </li>
-      </ol>
+            </button>
+          </li>
+        </ol>
+      </TooltipProvider>
     </aside>
 
     <section v-if="selectedSnapshot" class="snapshot-detail">

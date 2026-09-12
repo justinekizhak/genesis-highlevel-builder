@@ -20,7 +20,6 @@ import {
   IconLoader2,
   IconMessage,
   IconPlayerStop,
-  IconPlus,
   IconRefresh,
   IconSend,
   IconSparkles,
