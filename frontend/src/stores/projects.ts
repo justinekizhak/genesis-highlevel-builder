@@ -10,7 +10,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore'
-import { firebaseEnabled, requireFirestore } from '@/services/firebase'
+import { requireFirestore } from '@/services/firebase'
 import { useAuthStore } from './auth'
 
 export type Project = {
@@ -21,23 +21,6 @@ export type Project = {
   locationId: string | null
   deletedAt: string | null
   updatedAt: string
-}
-
-const demoSeed: Project = {
-  id: 'local-demo',
-  name: 'Contact intelligence',
-  description: 'Search recent contacts and see upcoming appointments.',
-  ownerId: 'demo-user',
-  locationId: null,
-  deletedAt: null,
-  updatedAt: new Date().toISOString(),
-}
-
-const storageKey = 'genesis.demo.projects'
-
-function readDemoProjects() {
-  const saved = localStorage.getItem(storageKey)
-  return saved ? JSON.parse(saved) as Project[] : [demoSeed]
 }
 
 export const useProjectsStore = defineStore('projects', () => {
@@ -51,10 +34,6 @@ export const useProjectsStore = defineStore('projects', () => {
     loading.value = true
     error.value = ''
     try {
-      if (!firebaseEnabled) {
-        projects.value = readDemoProjects().filter((project) => !project.deletedAt)
-        return
-      }
       const snapshot = await getDocs(query(collection(requireFirestore(), 'projects'), where('ownerId', '==', auth.user.uid)))
       projects.value = snapshot.docs
         .map((document) => {
@@ -86,14 +65,6 @@ export const useProjectsStore = defineStore('projects', () => {
       updatedAt: new Date().toISOString(),
     }
 
-    if (!firebaseEnabled) {
-      const created = { ...project, id: crypto.randomUUID() }
-      const all = [created, ...readDemoProjects()]
-      localStorage.setItem(storageKey, JSON.stringify(all))
-      projects.value = all.filter((item) => !item.deletedAt)
-      return created
-    }
-
     const document = await addDoc(collection(requireFirestore(), 'projects'), {
       ...project,
       createdAt: serverTimestamp(),
@@ -105,25 +76,11 @@ export const useProjectsStore = defineStore('projects', () => {
   }
 
   async function softDelete(projectId: string) {
-    if (!firebaseEnabled) {
-      const all = readDemoProjects().map((project) => project.id === projectId ? { ...project, deletedAt: new Date().toISOString() } : project)
-      localStorage.setItem(storageKey, JSON.stringify(all))
-      projects.value = all.filter((project) => !project.deletedAt)
-      return
-    }
     await updateDoc(doc(requireFirestore(), 'projects', projectId), { deletedAt: serverTimestamp() })
     projects.value = projects.value.filter((project) => project.id !== projectId)
   }
 
   async function update(projectId: string, changes: { name?: string; description?: string }) {
-    if (!firebaseEnabled) {
-      const all = readDemoProjects().map((project) => project.id === projectId
-        ? { ...project, ...changes, updatedAt: new Date().toISOString() }
-        : project)
-      localStorage.setItem(storageKey, JSON.stringify(all))
-      projects.value = all.filter((project) => !project.deletedAt)
-      return
-    }
     await updateDoc(doc(requireFirestore(), 'projects', projectId), { ...changes, updatedAt: serverTimestamp() })
     projects.value = projects.value.map((project) => project.id === projectId
       ? { ...project, ...changes, updatedAt: new Date().toISOString() }

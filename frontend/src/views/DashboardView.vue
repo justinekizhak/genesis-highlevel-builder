@@ -167,7 +167,7 @@ async function signOut() {
               <span>{{ highLevel.llm.configured ? 'OpenAI structured generation is ready.' : 'Set the Firebase OPENAI_API_KEY secret to enable live generation.' }}</span>
             </div>
           </div>
-          <Badge>{{ highLevel.llm.configured ? 'Ready' : 'Mock mode' }}</Badge>
+          <Badge>{{ highLevel.llm.configured ? 'Ready' : 'Not configured' }}</Badge>
         </section>
       </div>
       <p v-if="highLevel.error" class="form-error connection-error">{{ highLevel.error }}</p>

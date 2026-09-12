@@ -3,8 +3,7 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { onRequest } from 'firebase-functions/v2/https'
 import { z } from 'zod'
-import { buildApplicationEvents, generatedApplicationSchema } from './generate/application.js'
-import { mockProjectFiles } from './generate/mock-project.js'
+import { buildApplicationEvents } from './generate/application.js'
 import { generateWithOpenAi, openAiApiKey, openAiModel } from './generate/openai.js'
 import {
   listProjectSnapshots,
@@ -28,6 +27,7 @@ import { executeHighLevelOperation, highLevelOperations, type HighLevelOperation
 import { exchangeAuthorizationCode, fetchLocationName, getConnectionSummary, saveConnection } from './highlevel/tokens.js'
 import { AuthenticationError, requireFirebaseUser } from './http/auth.js'
 import { applyCors } from './http/cors.js'
+import { enforceRateLimit, RateLimitError } from './http/rate-limit.js'
 import { serializeSse } from './shared/protocol.js'
 
 initializeApp()
@@ -64,7 +64,8 @@ const restoreSnapshotSchema = z.object({
 
 function httpError(response: Parameters<typeof applyCors>[1], cause: unknown) {
   const message = cause instanceof Error ? cause.message : 'Unexpected server error.'
-  response.status(cause instanceof AuthenticationError ? 401 : 400).json({ error: message })
+  const status = cause instanceof AuthenticationError ? 401 : cause instanceof RateLimitError ? 429 : 400
+  response.status(status).json({ error: message })
 }
 
 export const healthz = onRequest({ region: 'us-central1', cors: false }, (request, response) => {
@@ -84,7 +85,7 @@ export const generateApp = onRequest(
       projectId: string
       prompt: string
       generationId: string
-      provider: 'openai' | 'mock'
+      provider: 'openai'
       parser: StructuredApplicationStream
       currentFiles: Record<string, string>
     } | undefined
@@ -104,13 +105,16 @@ export const generateApp = onRequest(
       const input = generateRequestSchema.parse(request.body)
       const generationContext = await loadGenerationContext(user.uid, input.projectId)
       const currentFiles = generationContext.files
-      const useOpenAi = Boolean(openAiApiKey.value())
+      if (!openAiApiKey.value()) throw new Error('AI generation is not configured. Set the OPENAI_API_KEY secret and redeploy the generation function.')
+      if (!generationContext.project.locationId) throw new Error('Connect a HighLevel location to this project before generating an app.')
+      await enforceRateLimit(user.uid, 'generate-minute', 5, 60, "You're generating too quickly. Wait about a minute and try again.")
+      await enforceRateLimit(user.uid, 'generate-day', 50, 86_400, "You've reached today's generation limit (50). Try again tomorrow.")
       const generationId = crypto.randomUUID()
       await persistUserMessage({ uid: user.uid, projectId: input.projectId, prompt: input.prompt, generationId })
       logger.info('Starting application generation', {
         projectId: input.projectId,
         promptLength: input.prompt.length,
-        provider: useOpenAi ? 'openai' : 'mock',
+        provider: 'openai',
       })
 
       response.status(200)
@@ -130,8 +134,8 @@ export const generateApp = onRequest(
       response.write(serializeSse({
         type: 'generation_started',
         generationId,
-        provider: useOpenAi ? 'openai' : 'mock',
-        model: useOpenAi ? openAiModel.value() : undefined,
+        provider: 'openai',
+        model: openAiModel.value(),
       }))
       try {
         const streamParser = new StructuredApplicationStream()
@@ -140,20 +144,15 @@ export const generateApp = onRequest(
           projectId: input.projectId,
           prompt: input.prompt,
           generationId,
-          provider: useOpenAi ? 'openai' : 'mock',
+          provider: 'openai',
           parser: streamParser,
           currentFiles,
         }
-        const application = useOpenAi
-          ? await generateWithOpenAi(input.prompt, currentFiles, abortController.signal, (delta) => {
-            for (const event of streamParser.push(delta)) {
-              if (!response.destroyed) response.write(serializeSse(event))
-            }
-          }, generationContext)
-          : generatedApplicationSchema.parse({
-            summary: 'OPENAI_API_KEY is not configured, so Genesis generated the safe demo application.',
-            files: Object.entries(mockProjectFiles).map(([path, content]) => ({ path, content })),
-          })
+        const application = await generateWithOpenAi(input.prompt, currentFiles, abortController.signal, (delta) => {
+          for (const event of streamParser.push(delta)) {
+            if (!response.destroyed) response.write(serializeSse(event))
+          }
+        }, generationContext)
         const built = buildApplicationEvents(application, 160, { generationId })
         await persistGeneration({
           uid: user.uid,
@@ -162,15 +161,10 @@ export const generateApp = onRequest(
           application,
           generationId,
           snapshotId: built.snapshotId,
-          provider: useOpenAi ? 'openai' : 'mock',
+          provider: 'openai',
         })
         generationPersisted = true
 
-        if (!useOpenAi) {
-          for (const event of built.events.slice(1, -2)) {
-            if (!response.destroyed) response.write(serializeSse(event))
-          }
-        }
         if (!response.destroyed) {
           response.write(serializeSse({ type: 'snapshot_created', snapshotId: built.snapshotId }))
           response.write(serializeSse({ type: 'complete', generationId }))
@@ -224,8 +218,8 @@ export const saveFiles = onRequest({ region: 'us-central1', cors: false }, async
   try {
     const user = await requireFirebaseUser(request)
     const input = projectFilesSchema.parse(request.body)
-    await saveProjectFiles(user.uid, input.projectId, input.files)
-    response.json({ ok: true })
+    const result = await saveProjectFiles(user.uid, input.projectId, input.files)
+    response.json({ ok: true, snapshotId: result.snapshotId })
   } catch (cause) {
     httpError(response, cause)
   }
@@ -376,6 +370,7 @@ export const hlProxy = onRequest(
     if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
     try {
       const user = await requireFirebaseUser(request)
+      await enforceRateLimit(user.uid, 'hl-proxy-minute', 60, 60, 'Too many HighLevel requests. Wait a moment and try again.')
       const input = proxyRequestSchema.parse(request.body)
       const data = await executeHighLevelOperation(user.uid, input.operation, input.parameters)
       response.json({ data })

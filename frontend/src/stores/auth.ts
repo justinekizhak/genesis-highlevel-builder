@@ -12,12 +12,6 @@ import { firebaseEnabled, requireFirebaseAuth } from '@/services/firebase'
 
 type SessionUser = Pick<User, 'uid' | 'email' | 'displayName'>
 
-const demoUser: SessionUser = {
-  uid: 'demo-user',
-  email: 'builder@genesis.local',
-  displayName: 'Demo Builder',
-}
-
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<SessionUser | null>(null)
   const initializing = ref(true)
@@ -25,7 +19,6 @@ export const useAuthStore = defineStore('auth', () => {
   let initializationPromise: Promise<void> | null = null
 
   const isAuthenticated = computed(() => Boolean(user.value))
-  const isDemoMode = computed(() => !firebaseEnabled)
 
   function initialize() {
     if (!initializationPromise) {
@@ -52,35 +45,26 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function signIn(email: string, password: string) {
     error.value = ''
-    if (!firebaseEnabled) {
-      user.value = { ...demoUser, email: email || demoUser.email }
-      return
-    }
     const credential = await signInWithEmailAndPassword(requireFirebaseAuth(), email, password)
     user.value = credential.user
   }
 
   async function signUp(name: string, email: string, password: string) {
     error.value = ''
-    if (!firebaseEnabled) {
-      user.value = { ...demoUser, displayName: name, email }
-      return
-    }
     const credential = await createUserWithEmailAndPassword(requireFirebaseAuth(), email, password)
     await updateProfile(credential.user, { displayName: name })
     user.value = credential.user
   }
 
   async function signOut() {
-    if (firebaseEnabled) await firebaseSignOut(requireFirebaseAuth())
+    await firebaseSignOut(requireFirebaseAuth())
     user.value = null
   }
 
   async function getIdToken(forceRefresh = false) {
-    if (!firebaseEnabled) return undefined
     await initialize()
     return requireFirebaseAuth().currentUser?.getIdToken(forceRefresh)
   }
 
-  return { user, initializing, error, isAuthenticated, isDemoMode, initialize, signIn, signUp, signOut, getIdToken }
+  return { user, initializing, error, isAuthenticated, initialize, signIn, signUp, signOut, getIdToken }
 })

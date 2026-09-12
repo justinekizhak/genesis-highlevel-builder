@@ -28,7 +28,9 @@ When HighLevel data is needed, call only the injected bridge:
 - window.genesis.highlevel.appointments.list({ calendarId, startTime, endTime })
 
 Never call a write method on page load; expose it only behind a clear user action. The host asks the user to confirm each write.
-The bridge may be absent in preview mode, so include tasteful demo data and a clear fallback. Build a complete responsive UI.
+The bridge is always present and backed by a real, connected HighLevel location: call it immediately on load and render
+whatever it returns. Never fabricate, hardcode, or fall back to placeholder contacts, conversations, or appointments — if a
+call fails, show a clear loading or error state instead of invented data. Build a complete responsive UI.
 For appointments, first list calendars, choose a calendar ID, and pass millisecond startTime and endTime values.
 Treat all CRM strings as untrusted. Render them with textContent or DOM node construction, never innerHTML interpolation.
 When current files are supplied, revise them according to the latest request rather than discarding useful behavior.`
@@ -37,8 +39,9 @@ type OpenAiStreamEvent = {
   type?: string
   delta?: string
   message?: string
-  error?: { message?: string }
-  response?: { error?: { message?: string } }
+  code?: string
+  error?: { message?: string; code?: string; type?: string }
+  response?: { error?: { message?: string; code?: string; type?: string } }
 }
 
 function eventData(block: string) {
@@ -46,6 +49,21 @@ function eventData(block: string) {
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trimStart())
     .join('\n')
+}
+
+const QUOTA_ERROR_PATTERN = /insufficient_quota|quota|billing/i
+
+function friendlyOpenAiError(status: number | undefined, event: OpenAiStreamEvent): string {
+  const detail = event.error ?? event.response?.error
+  const code = detail?.code ?? event.code
+  const raw = detail?.message ?? event.message ?? ''
+  if (status === 429 || code === 'insufficient_quota' || QUOTA_ERROR_PATTERN.test(raw) || QUOTA_ERROR_PATTERN.test(code ?? '')) {
+    return "Genesis's AI generation capacity is temporarily exhausted. This isn't something you can fix — please try again in a few minutes, or contact support if it persists."
+  }
+  if (status === 401) {
+    return 'OpenAI rejected OPENAI_API_KEY (401). Update the Firebase secret with a valid API key, then redeploy generateApp.'
+  }
+  return raw || `OpenAI request failed${status ? ` (${status})` : ''}.`
 }
 
 export function buildModelInput(prompt: string, currentFiles: Record<string, string>, context?: GenerationContext) {
@@ -91,10 +109,7 @@ export async function generateWithOpenAi(
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as OpenAiStreamEvent
-    if (response.status === 401) {
-      throw new Error('OpenAI rejected OPENAI_API_KEY (401). Update the Firebase secret with a valid API key, then redeploy generateApp.')
-    }
-    throw new Error(body.error?.message ?? body.message ?? `OpenAI request failed (${response.status}).`)
+    throw new Error(friendlyOpenAiError(response.status, body))
   }
   if (!response.body) throw new Error('OpenAI returned no response stream.')
 
@@ -115,8 +130,8 @@ export async function generateWithOpenAi(
         text += event.delta
         onDelta?.(event.delta)
       }
-      if (event.type === 'error') throw new Error(event.message ?? event.error?.message ?? 'OpenAI streaming failed.')
-      if (event.type === 'response.failed') throw new Error(event.response?.error?.message ?? event.error?.message ?? 'OpenAI generation failed.')
+      if (event.type === 'error') throw new Error(friendlyOpenAiError(undefined, event))
+      if (event.type === 'response.failed') throw new Error(friendlyOpenAiError(undefined, event))
     }
     if (done) break
   }

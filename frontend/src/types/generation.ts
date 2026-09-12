@@ -5,7 +5,7 @@ export type GeneratedFile = {
 }
 
 export type GenerationEvent =
-  | { type: 'generation_started'; generationId: string; provider?: 'openai' | 'mock'; model?: string }
+  | { type: 'generation_started'; generationId: string; provider?: 'openai'; model?: string }
   | { type: 'token'; delta: string }
   | { type: 'file_start'; path: string; language: string }
   | { type: 'file_delta'; path: string; delta: string }
@@ -26,7 +26,7 @@ export type ProjectSnapshot = {
   prompt: string
   summary: string
   provider: string
-  kind?: 'generation' | 'partial' | 'backup'
+  kind?: 'generation' | 'partial' | 'backup' | 'manual'
   fileCount: number
   createdAt: string
 }

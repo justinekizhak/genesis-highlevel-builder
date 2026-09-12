@@ -68,5 +68,9 @@ service cloud.firestore {
     match /oauthStates/{stateId} {
       allow read, write: if false;
     }
+
+    match /rateLimits/{windowId} {
+      allow read, write: if false;
+    }
   }
 }

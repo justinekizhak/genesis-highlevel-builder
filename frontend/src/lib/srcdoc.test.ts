@@ -8,7 +8,7 @@ describe('buildSrcdoc', () => {
       'styles.css': { path: 'styles.css', content: 'main{color:red}', language: 'css' },
       'app.js': { path: 'app.js', content: 'console.log("ready")', language: 'javascript' },
     })
-    expect(result).toContain("connect-src 'none'")
+    expect(result).toContain("connect-src https://cdn.jsdelivr.net")
     expect(result).toContain("script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net")
     expect(result).toContain('<main>Hello</main>')
     expect(result).toContain('console.log("ready")')

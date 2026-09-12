@@ -33,11 +33,6 @@ async function submit() {
   }
 }
 
-async function continueDemo() {
-  email.value = 'builder@genesis.local'
-  password.value = 'demo-password'
-  await submit()
-}
 </script>
 
 <template>
@@ -59,10 +54,6 @@ async function continueDemo() {
           <p>{{ isSignUp ? 'Start a new HighLevel builder workspace.' : 'Continue building your HighLevel projects.' }}</p>
         </div>
 
-        <div v-if="auth.isDemoMode" class="demo-notice">
-          Firebase is not configured, so this session will use local demo storage.
-        </div>
-
         <label v-if="isSignUp" for="name">Name</label>
         <Input v-if="isSignUp" id="name" v-model="name" autocomplete="name" required placeholder="Your name" />
 
@@ -78,8 +69,6 @@ async function continueDemo() {
           {{ busy ? 'Please wait' : isSignUp ? 'Create account' : 'Sign in' }}
           <IconArrowRight v-if="!busy" :size="16" />
         </Button>
-
-        <Button v-if="auth.isDemoMode" type="button" variant="secondary" class="auth-submit" @click="continueDemo">Continue with demo</Button>
 
         <p class="auth-switch">
           {{ isSignUp ? 'Already have an account?' : 'New to Genesis?' }}

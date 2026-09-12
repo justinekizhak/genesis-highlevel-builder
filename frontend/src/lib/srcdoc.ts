@@ -9,7 +9,12 @@ const highLevelBridge = `<script>
   const channel = 'genesis.highlevel.v1';
   let sequence = 0;
   const pending = new Map();
+  const hasBridgeHost = window.parent !== window;
   const invoke = (operation, parameters = {}) => new Promise((resolve, reject) => {
+    if (!hasBridgeHost) {
+      reject(new Error('HighLevel data is not available when the preview is opened in its own tab. Use the in-app preview panel for live HighLevel data.'));
+      return;
+    }
     const requestId = String(++sequence) + '-' + Date.now();
     pending.set(requestId, { resolve, reject });
     window.parent.postMessage({ channel, direction: 'request', requestId, operation, parameters }, '*');
@@ -41,9 +46,16 @@ const highLevelBridge = `<script>
 })();
 <\/script>`
 
+const emptyPreviewMarkup = `<main class="genesis-empty-preview">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v18M3 12h18" stroke-linecap="round"/></svg>
+  <p>Describe an app in the chat to see it here.</p>
+</main>`
+const emptyPreviewStyles = `:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#141411;font-family:ui-sans-serif,system-ui,sans-serif}.genesis-empty-preview{display:grid;justify-items:center;gap:10px;color:#6f6c62;text-align:center;padding:24px}.genesis-empty-preview svg{color:#4a4740}.genesis-empty-preview p{margin:0;font-size:13px}`
+
 export function buildSrcdoc(files: Record<string, GeneratedFile>, options: { enableHighLevelBridge?: boolean } = {}) {
-  const markup = files['index.html']?.content ?? '<main><p>No index.html generated yet.</p></main>'
-  const styles = files['styles.css']?.content ?? ''
+  const hasApp = Boolean(files['index.html'])
+  const markup = files['index.html']?.content ?? emptyPreviewMarkup
+  const styles = files['styles.css']?.content ?? (hasApp ? '' : emptyPreviewStyles)
   const script = files['app.js']?.content ?? ''
 
   return `<!doctype html>
@@ -51,7 +63,7 @@ export function buildSrcdoc(files: Record<string, GeneratedFile>, options: { ena
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; img-src data:; connect-src https://cdn.jsdelivr.net; form-action 'none'; base-uri 'none'" />
   <style>${styles}</style>
 </head>
 <body>

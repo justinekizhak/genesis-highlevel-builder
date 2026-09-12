@@ -42,12 +42,10 @@ import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
 import {
   generateApplication,
-  initialDemoFiles,
   listApplicationSnapshots,
   loadApplicationState,
   restoreApplicationSnapshot,
   saveApplicationFiles,
-  saveLocalApplicationState,
 } from '@/services/generation'
 import { useAuthStore } from '@/stores/auth'
 import { useHighLevelStore } from '@/stores/highlevel'
@@ -67,9 +65,9 @@ const MonacoEditor = defineAsyncComponent({
   loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
 })
 const workspaceRoot = ref<HTMLElement>()
-const files = ref<Record<string, GeneratedFile>>(structuredClone(initialDemoFiles))
-const activePath = ref('app.js')
-const openTabs = ref<string[]>(['app.js'])
+const files = ref<Record<string, GeneratedFile>>({})
+const activePath = ref('')
+const openTabs = ref<string[]>([])
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -99,7 +97,7 @@ const restoringSnapshotId = ref<string>()
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const currentGenerationId = ref<string>()
 const currentSnapshotId = ref<string>()
-const activeModel = ref(import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Model pending' : 'Local mock')
+const activeModel = ref('Model pending')
 const mobilePanel = ref<'chat' | 'code' | 'preview'>('chat')
 const chatCollapsed = ref(false)
 const codeCollapsed = ref(false)
@@ -110,11 +108,10 @@ const projectEditorOpen = ref(false)
 const projectName = ref('')
 const projectEditError = ref('')
 const projectSaving = ref(false)
-const streamSourceLabel = import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Firebase stream' : 'Local mock stream'
+const streamSourceLabel = 'Firebase stream'
 let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
 let saveTimer: number | undefined
-let chatSaveTimer: number | undefined
 const bridgeRequests = new Set<string>()
 let workspaceAnimation: { cancel?: () => void } | undefined
 
@@ -330,20 +327,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleHighLevelBridge)
   if (saveTimer) window.clearTimeout(saveTimer)
-  if (chatSaveTimer) window.clearTimeout(chatSaveTimer)
   controller?.abort()
   workspaceAnimation?.cancel?.()
 })
 watch(() => highLevelStore.connection.connected, renderPreview)
-watch(messages, () => {
-  if (import.meta.env.VITE_FUNCTIONS_BASE_URL) return
-  if (chatSaveTimer) window.clearTimeout(chatSaveTimer)
-  chatSaveTimer = window.setTimeout(() => saveLocalApplicationState(projectId.value, {
-    snapshotId: currentSnapshotId.value,
-    files: Object.fromEntries(Object.entries(files.value).map(([path, file]) => [path, file.content])),
-    messages: messages.value,
-  }), 120)
-}, { deep: true })
 
 function updateActiveFile(content: string) {
   if (!activeFile.value || isGenerating.value) return
@@ -356,14 +343,8 @@ function updateActiveFile(content: string) {
 
 async function persistManualFiles(): Promise<boolean> {
   try {
-    const savedFiles = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken(true))
-    if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
-      saveLocalApplicationState(projectId.value, {
-        snapshotId: currentSnapshotId.value,
-        files: savedFiles,
-        messages: messages.value,
-      })
-    }
+    const { snapshotId } = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken(true))
+    if (snapshotId) currentSnapshotId.value = snapshotId
     saveStatus.value = 'saved'
     renderPreview()
     return true
@@ -415,7 +396,7 @@ function handleEvent(event: GenerationEvent) {
   switch (event.type) {
     case 'generation_started':
       currentGenerationId.value = event.generationId
-      activeModel.value = event.provider === 'openai' ? (event.model ?? 'OpenAI') : 'Local mock'
+      activeModel.value = event.model ?? 'OpenAI'
       break
     case 'token': {
       const last = messages.value.at(-1)
@@ -448,13 +429,6 @@ function handleEvent(event: GenerationEvent) {
       generationDiffs.value = filesBeforeGeneration ? buildGenerationDiff(filesBeforeGeneration, files.value) : []
       renderPreview()
       mobilePanel.value = 'preview'
-      if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
-        saveLocalApplicationState(projectId.value, {
-          snapshotId: currentSnapshotId.value,
-          files: Object.fromEntries(Object.entries(files.value).map(([path, file]) => [path, file.content])),
-          messages: messages.value,
-        })
-      }
       filesBeforeGeneration = undefined
       break
     case 'error':
@@ -466,6 +440,10 @@ function handleEvent(event: GenerationEvent) {
 async function submitPrompt(suggestion?: string) {
   const value = (suggestion ?? prompt.value).trim()
   if (!value || isGenerating.value) return
+  if (!highLevelStore.connection.connected) {
+    generationError.value = 'Connect HighLevel before generating an app, so the preview always shows real CRM data.'
+    return
+  }
   if (saveTimer) window.clearTimeout(saveTimer)
   if ((saveStatus.value === 'saving' || saveStatus.value === 'error') && !await persistManualFiles()) return
   prompt.value = ''
@@ -512,7 +490,7 @@ function refreshPreview() {
 
 function openPreviewInNewTab() {
   bridgeError.value = ''
-  const blob = new Blob([buildSrcdoc(files.value)], { type: 'text/html' })
+  const blob = new Blob([buildSrcdoc(files.value, { enableHighLevelBridge: true })], { type: 'text/html' })
   const url = URL.createObjectURL(blob)
   const opened = window.open(url, '_blank')
   if (opened) opened.opener = null
@@ -604,9 +582,17 @@ function openPreviewInNewTab() {
           <p v-if="generationError" class="error-message">{{ generationError }}</p>
         </div>
 
+        <div v-if="!highLevelStore.connection.connected" class="connect-gate">
+          <p>Genesis only ever builds against your real CRM. Connect a HighLevel location to start generating.</p>
+          <Button type="button" size="sm" :disabled="!highLevelStore.canConnect || highLevelStore.loading" @click="highLevelStore.connect">
+            {{ highLevelStore.loading ? 'Checking' : 'Connect HighLevel' }}
+          </Button>
+        </div>
+
         <div class="suggestions">
-          <button @click="submitPrompt('Build a contact dashboard with search and upcoming appointments')">Contact dashboard</button>
-          <button @click="submitPrompt('Show recent conversations and unread messages')">Conversation inbox</button>
+          <button :disabled="!highLevelStore.connection.connected" @click="submitPrompt('Build a contact dashboard with search and upcoming appointments')">Contact dashboard</button>
+          <button :disabled="!highLevelStore.connection.connected" @click="submitPrompt('Show recent conversations and unread messages')">Conversation inbox</button>
+          <button :disabled="!highLevelStore.connection.connected" @click="submitPrompt('Show this week\'s calendar availability and upcoming appointments')">Calendar view</button>
         </div>
 
         <form class="composer" @submit.prevent="submitPrompt()">
@@ -616,7 +602,7 @@ function openPreviewInNewTab() {
             v-model="prompt"
             aria-label="Describe the HighLevel app to generate"
             placeholder="Build a contact dashboard with search..."
-            :disabled="isGenerating"
+            :disabled="isGenerating || !highLevelStore.connection.connected"
             @submit="submitPrompt()"
           />
           <div class="composer-footer">
@@ -624,7 +610,7 @@ function openPreviewInNewTab() {
             <Button v-if="isGenerating" type="button" variant="secondary" size="icon" aria-label="Stop generation" @click="stopGeneration">
               <IconPlayerStop :size="15" />
             </Button>
-            <Button v-else type="submit" size="icon" aria-label="Generate app" :disabled="!prompt.trim()">
+            <Button v-else type="submit" size="icon" aria-label="Generate app" :disabled="!prompt.trim() || !highLevelStore.connection.connected">
               <IconSend :size="16" />
             </Button>
           </div>
@@ -723,7 +709,7 @@ function openPreviewInNewTab() {
         <div class="panel-toolbar">
           <div class="toolbar-title"><IconExternalLink :size="16" /><span>Preview</span></div>
           <div class="preview-actions">
-            <span class="preview-url">genesis.local</span>
+            <span v-if="highLevelStore.connection.connected" class="preview-url">{{ highLevelStore.connection.locationName }}</span>
             <Button variant="ghost" size="icon" aria-label="Open preview in new tab" title="Open preview in new tab" @click="openPreviewInNewTab">
               <IconExternalLink :size="16" />
             </Button>
@@ -756,7 +742,7 @@ function openPreviewInNewTab() {
         <div class="dialog-heading">
           <div>
             <SheetTitle id="snapshot-title">Snapshot history</SheetTitle>
-            <SheetDescription id="snapshot-description">Every successful generation can be restored.</SheetDescription>
+            <SheetDescription id="snapshot-description">Every generation and manual edit can be restored.</SheetDescription>
           </div>
           <SheetClose as-child>
             <Button variant="ghost" size="icon" aria-label="Close snapshot history">×</Button>
@@ -771,7 +757,7 @@ function openPreviewInNewTab() {
               <div class="snapshot-meta">
                 <strong>{{ new Date(snapshot.createdAt).toLocaleString() }}</strong>
                 <Badge v-if="snapshot.id === currentSnapshotId">Current</Badge>
-                <Badge v-else>{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.provider }}</Badge>
+                <Badge v-else>{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.kind === 'manual' ? 'Manual edit' : snapshot.provider }}</Badge>
               </div>
               <p v-if="snapshot.prompt"><strong>Request:</strong> {{ snapshot.prompt }}</p>
               <p v-if="snapshot.summary"><strong>Result:</strong> {{ snapshot.summary }}</p>
@@ -865,7 +851,7 @@ function openPreviewInNewTab() {
     <footer class="statusbar">
       <span>{{ fileList.length }} files</span>
       <span v-if="currentSnapshotId">Snapshot ready</span>
-      <span>{{ highLevelStore.connection.connected ? 'HighLevel live' : 'HighLevel demo data' }}</span>
+      <span>{{ highLevelStore.connection.connected ? 'HighLevel live' : 'HighLevel not connected' }}</span>
       <span v-if="bridgeError" class="error-message">{{ bridgeError }}</span>
       <span>{{ activeModel }} / {{ streamSourceLabel }}</span>
     </footer>

@@ -67,4 +67,15 @@ describe('OpenAI streaming transport', () => {
       'OpenAI rejected OPENAI_API_KEY (401)',
     )
   })
+
+  it('shows a friendly message instead of raw billing text when OpenAI is out of quota', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { message: 'You exceeded your current quota, please check your plan and billing details.', code: 'insufficient_quota' },
+    }), { status: 429, headers: { 'Content-Type': 'application/json' } })))
+
+    await expect(generateWithOpenAi('Build contacts', {})).rejects.toThrow(
+      "Genesis's AI generation capacity is temporarily exhausted",
+    )
+  })
 })

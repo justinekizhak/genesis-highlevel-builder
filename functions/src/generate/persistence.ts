@@ -68,7 +68,7 @@ export async function persistGeneration(input: {
   application: GeneratedApplication
   generationId: string
   snapshotId: string
-  provider: 'openai' | 'mock'
+  provider: 'openai'
 }) {
   const projectReference = await requireOwnedProject(input.uid, input.projectId)
   const db = getFirestore()
@@ -104,7 +104,7 @@ export async function persistPartialGeneration(input: {
   summary: string
   files: Record<string, string>
   uid: string
-  provider: 'openai' | 'mock'
+  provider: 'openai'
 }) {
   const projectReference = await requireOwnedProject(input.uid, input.projectId)
   const batch = getFirestore().batch()
@@ -173,11 +173,21 @@ export async function saveProjectFiles(uid: string, projectId: string, files: Re
   const projectReference = await requireOwnedProject(uid, projectId)
   const batch = getFirestore().batch()
   const now = Timestamp.now()
+  const snapshotReference = projectReference.collection('snapshots').doc()
   for (const [path, content] of Object.entries(files)) {
     batch.set(projectReference.collection('files').doc(path), { path, content, updatedAt: now })
   }
-  batch.update(projectReference, { updatedAt: FieldValue.serverTimestamp() })
+  batch.set(snapshotReference, {
+    prompt: '',
+    summary: 'Manual edit',
+    files,
+    provider: 'manual',
+    kind: 'manual',
+    createdAt: now,
+  })
+  batch.update(projectReference, { latestSnapshotId: snapshotReference.id, updatedAt: FieldValue.serverTimestamp() })
   await batch.commit()
+  return { snapshotId: snapshotReference.id }
 }
 
 export async function restoreProjectSnapshot(uid: string, projectId: string, snapshotId: string) {
