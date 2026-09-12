@@ -4,28 +4,36 @@ function motionAllowed() {
   return !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+/** Extends `length` forward to the end of the word it lands in, so reveals never cut a word in half. */
+function extendToWordBoundary(text: string, length: number) {
+  if (length >= text.length) return text.length
+  const boundary = text.slice(length).search(/\s/)
+  return boundary === -1 ? text.length : length + boundary + 1
+}
+
 export function useTypewriter() {
   const revealedLength = ref(0)
   let frame: number | undefined
-  let targetGetter: (() => number) | undefined
+  let textGetter: (() => string) | undefined
 
   function tick() {
     frame = undefined
-    if (!targetGetter) return
-    const target = targetGetter()
-    const backlog = target - revealedLength.value
+    if (!textGetter) return
+    const text = textGetter()
+    const backlog = text.length - revealedLength.value
     if (backlog <= 0) {
-      revealedLength.value = target
+      revealedLength.value = text.length
       return
     }
-    revealedLength.value += Math.max(1, Math.ceil(backlog / 6))
+    const step = Math.max(1, Math.ceil(backlog / 6))
+    revealedLength.value = extendToWordBoundary(text, revealedLength.value + step)
     frame = requestAnimationFrame(tick)
   }
 
-  function start(getTarget: () => number) {
-    targetGetter = getTarget
+  function start(getText: () => string) {
+    textGetter = getText
     if (!motionAllowed()) {
-      revealedLength.value = getTarget()
+      revealedLength.value = getText().length
       return
     }
     if (frame === undefined) frame = requestAnimationFrame(tick)
@@ -34,15 +42,15 @@ export function useTypewriter() {
   function reset() {
     if (frame !== undefined) cancelAnimationFrame(frame)
     frame = undefined
-    targetGetter = undefined
+    textGetter = undefined
     revealedLength.value = 0
   }
 
   function finish() {
-    if (targetGetter) revealedLength.value = targetGetter()
+    if (textGetter) revealedLength.value = textGetter().length
     if (frame !== undefined) cancelAnimationFrame(frame)
     frame = undefined
-    targetGetter = undefined
+    textGetter = undefined
   }
 
   return { revealedLength, start, reset, finish }

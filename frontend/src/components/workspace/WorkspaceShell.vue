@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
+import { collection, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore'
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -41,12 +42,15 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { renderChatMarkdown } from '@/lib/markdown'
+import { requireFirestore } from '@/services/firebase'
+import { hlEventLabel } from '@/lib/highlevel-events'
 import { buildSrcdoc } from '@/lib/srcdoc'
 import { buildGenerationDiff, type GenerationFileDiff } from '@/lib/generation-diff'
 import { buildProjectArchive, projectArchiveFilename } from '@/lib/project-archive'
 import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
 import { useTypewriter } from '@/composables/typewriter'
+import { useTextPacer } from '@/composables/textPacer'
 import { useDiffReveal } from '@/composables/useDiffReveal'
 import DiffFileList from '@/components/workspace/DiffFileList.vue'
 import CommandPalette from '@/components/workspace/CommandPalette.vue'
@@ -92,6 +96,8 @@ const activePath = ref('')
 const openTabs = ref<string[]>([])
 const messageTypewriter = useTypewriter()
 const typingMessageId = ref<string>()
+const fileTypewriter = useTextPacer()
+const streamingFilePath = ref<string>()
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -108,6 +114,9 @@ const previewDocument = ref(buildSrcdoc(files.value))
 const previewFrame = ref<HTMLIFrameElement>()
 const previewFrameKey = ref(0)
 const bridgeError = ref('')
+const hlLiveEvent = ref<{ label: string } | undefined>()
+let hlLiveEventTimer: number | undefined
+let stopHlEventsListener: (() => void) | undefined
 const diffOpen = ref(false)
 const generationDiffs = ref<GenerationFileDiff[]>([])
 const lastGenerationBefore = ref<Record<string, GeneratedFile>>()
@@ -185,6 +194,11 @@ const writeConfirmationLabel = computed(() => (
 const activeFile = computed(() => files.value[activePath.value])
 const fileList = computed(() => Object.values(files.value))
 const activeFileDiff = computed(() => generationDiffs.value.find((file) => file.path === activePath.value))
+const activeFileDisplayContent = computed(() => {
+  if (!activeFile.value) return ''
+  if (streamingFilePath.value !== activePath.value) return activeFile.value.content
+  return activeFile.value.content.slice(0, fileTypewriter.revealedLength.value)
+})
 const statusLabel = computed(() => {
   if (generationError.value) return 'Needs attention'
   if (isStopping.value) return 'Stopping'
@@ -333,7 +347,7 @@ function hydrateFiles(source: Record<string, string>) {
 function openFile(path: string) {
   if (!openTabs.value.includes(path)) openTabs.value.push(path)
   activePath.value = path
-  showInlineDiff.value = false
+  showInlineDiff.value = !isGenerating.value && generationDiffs.value.some((file) => file.path === path)
 }
 
 function parseBridgeRequest(data: Record<string, unknown> | null, sourceId: string, respond: BridgeRequest['respond']) {
@@ -412,6 +426,32 @@ async function confirmHighLevelWrite() {
   if (request) await executeBridgeRequest(request)
 }
 
+function forwardHighLevelEvent(hlEvent: { type: string; payload: unknown }) {
+  hlLiveEvent.value = { label: hlEventLabel(hlEvent.type) }
+  window.clearTimeout(hlLiveEventTimer)
+  hlLiveEventTimer = window.setTimeout(() => { hlLiveEvent.value = undefined }, 6000)
+  previewFrame.value?.contentWindow?.postMessage({
+    channel: 'genesis.highlevel.v1', direction: 'event', event: hlEvent,
+  }, '*')
+}
+
+function startHlEventsListener() {
+  const uid = authStore.user?.uid
+  if (!uid) return
+  const eventsQuery = query(
+    collection(requireFirestore(), 'users', uid, 'hlEvents'),
+    where('createdAt', '>', Timestamp.now()),
+    orderBy('createdAt', 'asc'),
+  )
+  stopHlEventsListener = onSnapshot(eventsQuery, (snapshot) => {
+    for (const change of snapshot.docChanges()) {
+      if (change.type !== 'added') continue
+      const data = change.doc.data()
+      forwardHighLevelEvent({ type: data.type, payload: data.payload })
+    }
+  }, (error) => console.error('Could not watch HighLevel events', error))
+}
+
 function cancelHighLevelWrite() {
   const request = pendingWriteRequest.value
   pendingWriteRequest.value = undefined
@@ -422,6 +462,7 @@ function cancelHighLevelWrite() {
 
 onMounted(async () => {
   window.addEventListener('message', handleHighLevelBridge)
+  startHlEventsListener()
   try {
     if (!projectsStore.projects.length) await queryClient.fetchQuery({
       queryKey: ['projects', authStore.user?.uid ?? 'signed-out'],
@@ -451,6 +492,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleHighLevelBridge)
+  stopHlEventsListener?.()
+  window.clearTimeout(hlLiveEventTimer)
   if (saveTimer) window.clearTimeout(saveTimer)
   if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
   if (cancelFallbackTimer) window.clearTimeout(cancelFallbackTimer)
@@ -618,7 +661,7 @@ function handleEvent(event: GenerationEvent) {
         messages.value.push(created)
         typingMessageId.value = created.id
         messageTypewriter.reset()
-        messageTypewriter.start(() => created.content.length)
+        messageTypewriter.start(() => created.content)
       }
       break
     }
@@ -633,6 +676,9 @@ function handleEvent(event: GenerationEvent) {
       } else {
         refinementPaths.delete(event.path)
         files.value[event.path] = { path: event.path, language: event.language, content: '' }
+        streamingFilePath.value = event.path
+        fileTypewriter.reset()
+        fileTypewriter.start(() => files.value[event.path]?.content.length ?? 0)
       }
       openFile(event.path)
       mobilePanel.value = 'code'
@@ -685,11 +731,15 @@ function handleEvent(event: GenerationEvent) {
       filesBeforeGeneration = undefined
       messageTypewriter.finish()
       typingMessageId.value = undefined
+      fileTypewriter.finish()
+      streamingFilePath.value = undefined
       break
     case 'error':
       if (!(isStopping.value && event.code === 'GENERATION_CANCELLED')) generationError.value = event.message
       messageTypewriter.finish()
       typingMessageId.value = undefined
+      fileTypewriter.finish()
+      streamingFilePath.value = undefined
       break
   }
 }
@@ -709,6 +759,8 @@ async function submitPrompt(suggestion?: string) {
   filesTouchedThisGeneration.value = []
   showInlineDiff.value = false
   clearRefinementState()
+  fileTypewriter.finish()
+  streamingFilePath.value = undefined
   isGenerating.value = true
   messages.value.push({ id: crypto.randomUUID(), role: 'user', content: value })
   filesBeforeGeneration = cloneFiles(files.value)
@@ -759,6 +811,8 @@ async function stopGeneration() {
   clearRefinementState()
   messageTypewriter.finish()
   typingMessageId.value = undefined
+  fileTypewriter.finish()
+  streamingFilePath.value = undefined
   stoppedNotice.value = 'Stopping generation… Partial output will stay in the editor.'
   if (!generationId) {
     activeController.abort()
@@ -879,9 +933,6 @@ const { list: shortcutsList } = useShortcuts([
             :class="{ active: isGenerating, attention: generationError }"
             @click="generationError ? (attentionOpen = true) : undefined"
           >{{ statusLabel }}</Badge>
-          <Button v-if="generationDiffs.length" variant="ghost" size="sm" @click="diffOpen = true">
-            <IconFileDiff :size="16" />Changes
-          </Button>
         </div>
 
         <div class="action-group action-group--utility">
@@ -1086,7 +1137,7 @@ const { list: shortcutsList } = useShortcuts([
             />
             <MonacoEditor
               v-else-if="activeFile"
-              :value="activeFile.content"
+              :value="activeFileDisplayContent"
               :language="activeFile.language"
               theme="vs-dark"
               :options="{
@@ -1147,6 +1198,7 @@ const { list: shortcutsList } = useShortcuts([
             @click="openPreviewInNewTab"
           ><IconExternalLink :size="16" /><span>Preview</span></button>
           <div class="preview-actions">
+            <span v-if="hlLiveEvent" class="hl-event-pill">{{ hlLiveEvent.label }}</span>
             <span v-if="highLevelStore.connection.connected" class="preview-url">{{ highLevelStore.connection.locationName }}</span>
             <Button variant="ghost" size="icon" aria-label="Refresh preview" @click="refreshPreview">
               <IconRefresh :size="16" />

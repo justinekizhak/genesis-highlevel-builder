@@ -8,18 +8,22 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:watch": "tsc --watch --preserveWatchOutput",
     "test": "vitest run",
-    "serve": "pnpm build && firebase emulators:start --only functions"
+    "serve": "pnpm build && firebase emulators:start --only functions",
+    "dev": "concurrently -n tsc,emulator -c blue,green \"pnpm build:watch\" \"firebase emulators:start --only functions\""
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^5.0.5",
     "firebase-admin": "^13.4.0",
     "firebase-functions": "^6.4.0",
+    "openai": "7.15.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
     "@types/express": "^4.17.23",
     "@types/node": "^24.3.0",
+    "concurrently": "^9.1.0",
     "typescript": "~5.9.2",
     "vitest": "^3.2.4"
   }

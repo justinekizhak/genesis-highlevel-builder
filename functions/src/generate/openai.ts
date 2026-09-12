@@ -1,4 +1,6 @@
 import { defineSecret, defineString } from 'firebase-functions/params'
+import OpenAI, { APIError } from 'openai'
+import type { ResponseStreamEvent } from 'openai/resources/responses/responses.js'
 import { generatedApplicationSchema, applicationJsonSchema, type GeneratedApplication } from './application.js'
 import type { GenerationContext } from './persistence.js'
 
@@ -27,6 +29,13 @@ When HighLevel data is needed, call only the injected bridge:
 - window.genesis.highlevel.calendars.list(parameters)
 - window.genesis.highlevel.calendars.availability({ calendarId, startDate, endDate, timezone })
 - window.genesis.highlevel.appointments.list({ calendarId, startTime, endTime })
+- window.genesis.highlevel.events.subscribe(callback) — registers callback(event) for live HighLevel webhook
+  events (event.type is one of ContactCreate, ContactUpdate, ContactDelete, InboundMessage, AppointmentCreate,
+  AppointmentUpdate; event.payload carries the raw webhook body). Returns an unsubscribe function.
+
+If the app displays contacts, conversations, or appointments, call events.subscribe once on load and, on a matching
+event type, silently re-run the relevant list call and update the rendered list in place — do not show a toast or
+reload the page, just keep the list current.
 
 Never call a write method on page load; expose it only behind a clear user action. The host asks the user to confirm each write.
 The bridge is always present and backed by a real, connected HighLevel location: call it immediately on load and render
@@ -76,28 +85,16 @@ rather than improvising per screen:
    padding from the spacing scale above. Build every screen (including empty/loading/error states) with only these
    rules — consistency across the whole app matters far more than any single screen looking distinctive.`
 
-type OpenAiStreamEvent = {
-  type?: string
-  delta?: string
+type FriendlyErrorDetail = {
   message?: string
-  code?: string
-  error?: { message?: string; code?: string; type?: string }
-  response?: { error?: { message?: string; code?: string; type?: string } }
-}
-
-function eventData(block: string) {
-  return block.split('\n')
-    .filter((line) => line.startsWith('data:'))
-    .map((line) => line.slice(5).trimStart())
-    .join('\n')
+  code?: string | null
 }
 
 const QUOTA_ERROR_PATTERN = /insufficient_quota|quota|billing/i
 
-function friendlyOpenAiError(status: number | undefined, event: OpenAiStreamEvent): string {
-  const detail = event.error ?? event.response?.error
-  const code = detail?.code ?? event.code
-  const raw = detail?.message ?? event.message ?? ''
+function friendlyOpenAiError(status: number | undefined, detail: FriendlyErrorDetail): string {
+  const code = detail.code ?? undefined
+  const raw = detail.message ?? ''
   if (status === 429 || code === 'insufficient_quota' || QUOTA_ERROR_PATTERN.test(raw) || QUOTA_ERROR_PATTERN.test(code ?? '')) {
     return "Genesis's AI generation capacity is temporarily exhausted. This isn't something you can fix — please try again in a few minutes, or contact support if it persists."
   }
@@ -105,6 +102,15 @@ function friendlyOpenAiError(status: number | undefined, event: OpenAiStreamEven
     return 'OpenAI rejected OPENAI_API_KEY (401). Update the Firebase secret with a valid API key, then redeploy generateApp.'
   }
   return raw || `OpenAI request failed${status ? ` (${status})` : ''}.`
+}
+
+function errorEventDetail(event: ResponseStreamEvent): FriendlyErrorDetail {
+  if (event.type === 'error') return { message: event.message, code: event.code ?? undefined }
+  if (event.type === 'response.failed') {
+    const failure = event.response.error
+    return { message: failure?.message, code: failure?.code ?? undefined }
+  }
+  return {}
 }
 
 export function buildModelInput(prompt: string, currentFiles: Record<string, string>, context?: GenerationContext) {
@@ -125,11 +131,11 @@ export async function generateWithOpenAi(
   const apiKey = openAiApiKey.value()
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.')
 
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    signal,
-    body: JSON.stringify({
+  const client = new OpenAI({ apiKey })
+
+  let stream: AsyncIterable<ResponseStreamEvent>
+  try {
+    stream = await client.responses.create({
       model: openAiModel.value(),
       stream: true,
       store: false,
@@ -145,36 +151,24 @@ export async function generateWithOpenAi(
           schema: applicationJsonSchema,
         },
       },
-    }),
-  })
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as OpenAiStreamEvent
-    throw new Error(friendlyOpenAiError(response.status, body))
-  }
-  if (!response.body) throw new Error('OpenAI returned no response stream.')
-
-  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader()
-  let buffer = ''
-  let text = ''
-  while (true) {
-    const { done, value = '' } = await reader.read()
-    buffer += value.replaceAll('\r\n', '\n')
-    let boundary = buffer.indexOf('\n\n')
-    while (boundary >= 0) {
-      const data = eventData(buffer.slice(0, boundary))
-      buffer = buffer.slice(boundary + 2)
-      boundary = buffer.indexOf('\n\n')
-      if (!data || data === '[DONE]') continue
-      const event = JSON.parse(data) as OpenAiStreamEvent
-      if (event.type === 'response.output_text.delta' && event.delta) {
-        text += event.delta
-        onDelta?.(event.delta)
-      }
-      if (event.type === 'error') throw new Error(friendlyOpenAiError(undefined, event))
-      if (event.type === 'response.failed') throw new Error(friendlyOpenAiError(undefined, event))
+    }, { signal })
+  } catch (error) {
+    if (error instanceof APIError) {
+      const body = error.error as { message?: string } | null | undefined
+      throw new Error(friendlyOpenAiError(error.status, { message: body?.message ?? error.message, code: error.code }))
     }
-    if (done) break
+    throw error
+  }
+
+  let text = ''
+  for await (const event of stream) {
+    if (event.type === 'response.output_text.delta' && event.delta) {
+      text += event.delta
+      onDelta?.(event.delta)
+    }
+    if (event.type === 'error' || event.type === 'response.failed') {
+      throw new Error(friendlyOpenAiError(undefined, errorEventDetail(event)))
+    }
   }
   if (!text) throw new Error('The model returned no application output.')
   return generatedApplicationSchema.parse(JSON.parse(text))

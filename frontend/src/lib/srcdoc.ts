@@ -40,8 +40,16 @@ function buildHighLevelBridge(broadcastChannelName?: string, directProxy?: { fun
       bridgeHost ? bridgeHost.postMessage(message, '*') : broadcast.postMessage(message);
     });
   };
-  const handleResponse = (data) => {
-    if (data?.channel !== channel || data?.direction !== 'response') return;
+  const eventListeners = new Set();
+  const emitEvent = (hlEvent) => {
+    eventListeners.forEach((listener) => {
+      try { listener(hlEvent); } catch (error) { console.error('HighLevel event listener failed', error); }
+    });
+  };
+  const handleMessage = (data) => {
+    if (data?.channel !== channel) return;
+    if (data.direction === 'event') { emitEvent(data.event); return; }
+    if (data.direction !== 'response') return;
     const request = pending.get(data.requestId);
     if (!request) return;
     pending.delete(data.requestId);
@@ -50,11 +58,11 @@ function buildHighLevelBridge(broadcastChannelName?: string, directProxy?: { fun
   if (!directProxy) {
     window.addEventListener('message', (event) => {
       if (event.source !== bridgeHost) return;
-      handleResponse(event.data);
+      handleMessage(event.data);
     });
   }
   if (broadcast) {
-    broadcast.addEventListener('message', (event) => handleResponse(event.data));
+    broadcast.addEventListener('message', (event) => handleMessage(event.data));
     window.addEventListener('pagehide', () => {
       broadcast.postMessage({ channel, direction: 'disconnect' });
       broadcast.close();
@@ -76,6 +84,12 @@ function buildHighLevelBridge(broadcastChannelName?: string, directProxy?: { fun
       availability: (parameters) => invoke('calendars.availability', parameters),
     }),
     appointments: Object.freeze({ list: (parameters) => invoke('appointments.list', parameters) }),
+    events: Object.freeze({
+      subscribe: (listener) => {
+        eventListeners.add(listener);
+        return () => eventListeners.delete(listener);
+      },
+    }),
   }) });
 })();
 <\/script>`

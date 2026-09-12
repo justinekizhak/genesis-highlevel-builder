@@ -28,6 +28,8 @@ describe('buildSrcdoc', () => {
     expect(result).toContain("invoke('calendars.availability'")
     expect(result).toContain("invoke('appointments.list'")
     expect(result).toContain('event.source !== bridgeHost')
+    expect(result).toContain('events: Object.freeze({')
+    expect(result).toContain("if (data.direction === 'event') { emitEvent(data.event); return; }")
   })
 
   it('connects a standalone preview through an isolated broadcast channel', () => {
