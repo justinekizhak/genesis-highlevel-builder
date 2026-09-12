@@ -12,6 +12,7 @@ import {
   loadProjectState,
   persistGeneration,
   persistPartialGeneration,
+  persistUserMessage,
   restoreProjectSnapshot,
   saveProjectFiles,
 } from './generate/persistence.js'
@@ -104,6 +105,8 @@ export const generateApp = onRequest(
       const generationContext = await loadGenerationContext(user.uid, input.projectId)
       const currentFiles = generationContext.files
       const useOpenAi = Boolean(openAiApiKey.value())
+      const generationId = crypto.randomUUID()
+      await persistUserMessage({ uid: user.uid, projectId: input.projectId, prompt: input.prompt, generationId })
       logger.info('Starting application generation', {
         projectId: input.projectId,
         promptLength: input.prompt.length,
@@ -117,7 +120,6 @@ export const generateApp = onRequest(
       response.setHeader('X-Accel-Buffering', 'no')
       response.flushHeaders()
 
-      const generationId = crypto.randomUUID()
       const abortController = new AbortController()
       response.on('close', () => {
         if (!response.writableEnded) abortController.abort()

@@ -17,7 +17,9 @@ describe('generation SSE transport', () => {
     const script = initialDemoFiles['app.js']!.content
     expect(script).toContain('calendars.list({})')
     expect(script).toContain('appointments.list({ calendarId: calendar.id, startTime, endTime })')
-    expect(script).toContain('name.textContent = contact.name')
+    expect(script).toContain('createApp({')
+    expect(initialDemoFiles['index.html']!.content).toContain('@tailwindcss/browser@4.1.12')
+    expect(initialDemoFiles['index.html']!.content).toContain('vue@3.5.20/dist/vue.global.prod.js')
     expect(script).not.toContain('.innerHTML')
   })
 

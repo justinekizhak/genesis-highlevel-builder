@@ -10,8 +10,10 @@ Every generated application is HighLevel-focused. Unless the user explicitly nam
 conversations, and calendars as HighLevel contacts, HighLevel conversations, and HighLevel calendars. Implement those
 features with the injected HighLevel bridge described below rather than generic browser data models or unrelated APIs.
 Return exactly index.html, styles.css, and app.js. Keep the schema property order and order the files as index.html,
-styles.css, then app.js so each file can be safely parsed while it streams. The HTML must contain markup only and load no remote resources.
-Use vanilla JavaScript and CSS. Never emit credentials, OAuth tokens, script tags, inline event handlers, eval, Function,
+styles.css, then app.js so each file can be safely parsed while it streams. Build Vue 3 applications with the global build from
+https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js. Tailwind CSS is supported through
+https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.12. These are the only remote resources allowed in index.html.
+Never emit credentials, OAuth tokens, inline event handlers, eval, Function,
 dynamic script injection, service workers, localStorage access, or parent/top window access.
 
 When HighLevel data is needed, call only the injected bridge:
@@ -89,6 +91,9 @@ export async function generateWithOpenAi(
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({})) as OpenAiStreamEvent
+    if (response.status === 401) {
+      throw new Error('OpenAI rejected OPENAI_API_KEY (401). Update the Firebase secret with a valid API key, then redeploy generateApp.')
+    }
     throw new Error(body.error?.message ?? body.message ?? `OpenAI request failed (${response.status}).`)
   }
   if (!response.body) throw new Error('OpenAI returned no response stream.')

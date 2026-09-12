@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { buildSrcdoc } from './srcdoc'
 
 describe('buildSrcdoc', () => {
-  it('assembles the fixed runtime and blocks network access', () => {
+  it('assembles the fixed runtime and limits CDN scripts to the supported runtime host', () => {
     const result = buildSrcdoc({
       'index.html': { path: 'index.html', content: '<main>Hello</main>', language: 'html' },
       'styles.css': { path: 'styles.css', content: 'main{color:red}', language: 'css' },
       'app.js': { path: 'app.js', content: 'console.log("ready")', language: 'javascript' },
     })
     expect(result).toContain("connect-src 'none'")
+    expect(result).toContain("script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net")
     expect(result).toContain('<main>Hello</main>')
     expect(result).toContain('console.log("ready")')
     expect(result).not.toContain('genesis.highlevel.v1')

@@ -3,9 +3,12 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import { useRoute, useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import {
+  IconArrowLeft,
   IconBraces,
-  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
   IconCode,
+  IconEdit,
   IconFileDiff,
   IconExternalLink,
   IconFileCode,
@@ -21,6 +24,8 @@ import {
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Textarea from '@/components/ui/Textarea.vue'
+import Input from '@/components/ui/Input.vue'
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import {
@@ -77,6 +82,7 @@ const isGenerating = ref(false)
 const generationError = ref('')
 const previewDocument = ref(buildSrcdoc(files.value))
 const previewFrame = ref<HTMLIFrameElement>()
+const previewFrameKey = ref(0)
 const bridgeError = ref('')
 const diffOpen = ref(false)
 const generationDiffs = ref<GenerationFileDiff[]>([])
@@ -95,10 +101,20 @@ const currentGenerationId = ref<string>()
 const currentSnapshotId = ref<string>()
 const activeModel = ref(import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Model pending' : 'Local mock')
 const mobilePanel = ref<'chat' | 'code' | 'preview'>('chat')
+const chatCollapsed = ref(false)
+const codeCollapsed = ref(false)
+const previewCollapsed = ref(false)
+const codeShare = ref(52)
+const attentionOpen = ref(false)
+const projectEditorOpen = ref(false)
+const projectName = ref('')
+const projectEditError = ref('')
+const projectSaving = ref(false)
 const streamSourceLabel = import.meta.env.VITE_FUNCTIONS_BASE_URL ? 'Firebase stream' : 'Local mock stream'
 let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
 let saveTimer: number | undefined
+let chatSaveTimer: number | undefined
 const bridgeRequests = new Set<string>()
 let workspaceAnimation: { cancel?: () => void } | undefined
 
@@ -122,6 +138,12 @@ const statusLabel = computed(() => {
 })
 const projectId = computed(() => String(route.params.projectId ?? 'local-demo'))
 const projectTitle = computed(() => projectsStore.projects.find((project) => project.id === projectId.value)?.name ?? 'Untitled project')
+const workspaceStyle = computed(() => {
+  const chat = chatCollapsed.value ? '44px' : 'minmax(250px, 330px)'
+  if (codeCollapsed.value) return { gridTemplateColumns: `${chat} 44px minmax(320px, 1fr)` }
+  if (previewCollapsed.value) return { gridTemplateColumns: `${chat} minmax(360px, 1fr) 44px` }
+  return { gridTemplateColumns: `${chat} minmax(280px, ${codeShare.value}fr) 6px minmax(300px, ${100 - codeShare.value}fr)` }
+})
 
 function cloneFiles(source: Record<string, GeneratedFile>) {
   return Object.fromEntries(Object.entries(source).map(([path, file]) => [path, { ...file }]))
@@ -129,6 +151,65 @@ function cloneFiles(source: Record<string, GeneratedFile>) {
 
 function renderPreview() {
   previewDocument.value = buildSrcdoc(files.value, { enableHighLevelBridge: highLevelStore.connection.connected })
+}
+
+function toggleCodePanel() {
+  codeCollapsed.value = !codeCollapsed.value
+  if (codeCollapsed.value) previewCollapsed.value = false
+}
+
+function togglePreviewPanel() {
+  previewCollapsed.value = !previewCollapsed.value
+  if (previewCollapsed.value) codeCollapsed.value = false
+}
+
+function startPanelResize(event: PointerEvent) {
+  if (codeCollapsed.value || previewCollapsed.value) return
+  const codePanel = workspaceRoot.value?.querySelector<HTMLElement>('.code-panel')
+  const previewPanel = workspaceRoot.value?.querySelector<HTMLElement>('.preview-panel')
+  const total = (codePanel?.offsetWidth ?? 0) + (previewPanel?.offsetWidth ?? 0)
+  if (!total) return
+  const startX = event.clientX
+  const startShare = codeShare.value
+  const move = (moveEvent: PointerEvent) => {
+    codeShare.value = Math.min(75, Math.max(25, startShare + ((moveEvent.clientX - startX) / total) * 100))
+  }
+  const stop = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', stop)
+    document.body.classList.remove('is-resizing-panels')
+  }
+  document.body.classList.add('is-resizing-panels')
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', stop, { once: true })
+}
+
+function resizePanelsWithKeyboard(event: KeyboardEvent) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  event.preventDefault()
+  codeShare.value = Math.min(75, Math.max(25, codeShare.value + (event.key === 'ArrowRight' ? 3 : -3)))
+}
+
+function openProjectEditor() {
+  projectName.value = projectTitle.value
+  projectEditError.value = ''
+  projectEditorOpen.value = true
+}
+
+async function saveProjectName() {
+  const value = projectName.value.trim()
+  if (!value || projectSaving.value) return
+  projectSaving.value = true
+  projectEditError.value = ''
+  try {
+    await projectsStore.update(projectId.value, { name: value })
+    await queryClient.invalidateQueries({ queryKey: ['projects'] })
+    projectEditorOpen.value = false
+  } catch (error) {
+    projectEditError.value = error instanceof Error ? error.message : 'Could not rename this project.'
+  } finally {
+    projectSaving.value = false
+  }
 }
 
 function hydrateFiles(source: Record<string, string>) {
@@ -231,14 +312,14 @@ onMounted(async () => {
     }).catch(() => [])
     const state = await queryClient.fetchQuery({
       queryKey: ['project-state', projectId.value],
-      queryFn: async () => loadApplicationState(projectId.value, await authStore.getIdToken()),
+      queryFn: async () => loadApplicationState(projectId.value, await authStore.getIdToken(true)),
     })
     if (state?.files) {
       hydrateFiles(state.files)
       renderPreview()
       currentSnapshotId.value = state.snapshotId
     }
-    if (state?.messages.length) messages.value = state.messages
+    if (state?.messages?.length) messages.value = state.messages
   } catch (error) {
     generationError.value = error instanceof Error ? error.message : 'Could not load this project.'
   }
@@ -249,10 +330,20 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('message', handleHighLevelBridge)
   if (saveTimer) window.clearTimeout(saveTimer)
+  if (chatSaveTimer) window.clearTimeout(chatSaveTimer)
   controller?.abort()
   workspaceAnimation?.cancel?.()
 })
 watch(() => highLevelStore.connection.connected, renderPreview)
+watch(messages, () => {
+  if (import.meta.env.VITE_FUNCTIONS_BASE_URL) return
+  if (chatSaveTimer) window.clearTimeout(chatSaveTimer)
+  chatSaveTimer = window.setTimeout(() => saveLocalApplicationState(projectId.value, {
+    snapshotId: currentSnapshotId.value,
+    files: Object.fromEntries(Object.entries(files.value).map(([path, file]) => [path, file.content])),
+    messages: messages.value,
+  }), 120)
+}, { deep: true })
 
 function updateActiveFile(content: string) {
   if (!activeFile.value || isGenerating.value) return
@@ -265,7 +356,7 @@ function updateActiveFile(content: string) {
 
 async function persistManualFiles(): Promise<boolean> {
   try {
-    const savedFiles = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken())
+    const savedFiles = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken(true))
     if (!import.meta.env.VITE_FUNCTIONS_BASE_URL) {
       saveLocalApplicationState(projectId.value, {
         snapshotId: currentSnapshotId.value,
@@ -288,9 +379,10 @@ async function openSnapshotHistory() {
   snapshotLoading.value = true
   snapshotError.value = ''
   try {
+    await queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
     snapshots.value = await queryClient.fetchQuery({
       queryKey: ['project-snapshots', projectId.value],
-      queryFn: async () => listApplicationSnapshots(projectId.value, await authStore.getIdToken()),
+      queryFn: async () => listApplicationSnapshots(projectId.value, await authStore.getIdToken(true)),
     })
   } catch (error) {
     snapshotError.value = error instanceof Error ? error.message : 'Could not load snapshot history.'
@@ -305,7 +397,7 @@ async function restoreSnapshot(snapshot: ProjectSnapshot) {
   restoringSnapshotId.value = snapshot.id
   snapshotError.value = ''
   try {
-    const restored = await restoreApplicationSnapshot(projectId.value, snapshot.id, await authStore.getIdToken())
+    const restored = await restoreApplicationSnapshot(projectId.value, snapshot.id, await authStore.getIdToken(true))
     hydrateFiles(restored.files)
     currentSnapshotId.value = restored.snapshotId
     await queryClient.invalidateQueries({ queryKey: ['project-state', projectId.value] })
@@ -388,7 +480,7 @@ async function submitPrompt(suggestion?: string) {
       prompt: value,
       projectId: projectId.value,
       currentFiles: filesBeforeGeneration ?? {},
-      idToken: await authStore.getIdToken(),
+      idToken: await authStore.getIdToken(true),
       signal: controller.signal,
       onEvent: handleEvent,
     })
@@ -412,7 +504,20 @@ function stopGeneration() {
 
 function refreshPreview() {
   renderPreview()
-  if (previewFrame.value) animateFeedback(previewFrame.value)
+  previewFrameKey.value += 1
+  nextTick(() => {
+    if (previewFrame.value) animateFeedback(previewFrame.value)
+  })
+}
+
+function openPreviewInNewTab() {
+  bridgeError.value = ''
+  const blob = new Blob([buildSrcdoc(files.value)], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const opened = window.open(url, '_blank')
+  if (opened) opened.opener = null
+  else bridgeError.value = 'The preview tab was blocked. Allow pop-ups for this site and try again.'
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
 </script>
 
@@ -420,6 +525,9 @@ function refreshPreview() {
   <main ref="workspaceRoot" class="app-shell">
     <header class="topbar">
       <div class="brand">
+        <Button variant="ghost" size="icon" aria-label="Back to projects" title="Back to projects" @click="router.push('/projects')">
+          <IconArrowLeft :size="17" />
+        </Button>
         <div class="brand-mark"><IconBraces :size="18" :stroke-width="1.8" /></div>
         <div>
           <strong>Genesis</strong>
@@ -427,13 +535,20 @@ function refreshPreview() {
         </div>
       </div>
 
-      <button class="project-switcher" type="button" @click="router.push('/projects')">
+      <button class="project-switcher" type="button" title="Rename project" @click="openProjectEditor">
         <span>{{ projectTitle }}</span>
-        <IconChevronDown :size="15" />
+        <IconEdit :size="14" />
       </button>
 
       <div class="topbar-actions">
-        <Badge :class="isGenerating ? 'status-badge active' : 'status-badge'">{{ statusLabel }}</Badge>
+        <button
+          v-if="generationError"
+          class="status-badge status-button attention"
+          type="button"
+          aria-label="Show issue details"
+          @click="attentionOpen = true"
+        >{{ statusLabel }}</button>
+        <Badge v-else :class="isGenerating ? 'status-badge active' : 'status-badge'">{{ statusLabel }}</Badge>
         <Button v-if="generationDiffs.length" variant="ghost" size="sm" @click="diffOpen = true">
           <IconFileDiff :size="16" />Changes
         </Button>
@@ -454,14 +569,23 @@ function refreshPreview() {
       </TabsList>
     </Tabs>
 
-    <section class="workspace">
-      <aside class="panel chat-panel" :class="{ 'mobile-active': mobilePanel === 'chat' }">
+    <section class="workspace" :style="workspaceStyle">
+      <aside class="panel chat-panel" :class="{ 'mobile-active': mobilePanel === 'chat', 'is-collapsed': chatCollapsed }">
+        <Button
+          v-if="chatCollapsed"
+          class="collapsed-panel-button"
+          variant="ghost"
+          size="icon"
+          aria-label="Expand conversation"
+          title="Expand conversation"
+          @click="chatCollapsed = false"
+        ><IconMessage :size="17" /></Button>
         <div class="panel-heading">
           <div>
             <span class="heading-label">Conversation</span>
             <h1>Build with HighLevel</h1>
           </div>
-          <Button variant="ghost" size="icon" aria-label="Collapse conversation">
+          <Button variant="ghost" size="icon" aria-label="Collapse conversation" title="Collapse conversation" @click="chatCollapsed = true">
             <IconLayoutSidebarLeftCollapse :size="17" />
           </Button>
         </div>
@@ -507,13 +631,27 @@ function refreshPreview() {
         </form>
       </aside>
 
-      <section class="panel code-panel" :class="{ 'mobile-active': mobilePanel === 'code' }">
+      <section class="panel code-panel" :class="{ 'mobile-active': mobilePanel === 'code', 'is-collapsed': codeCollapsed }">
+        <Button
+          v-if="codeCollapsed"
+          class="collapsed-panel-button"
+          variant="ghost"
+          size="icon"
+          aria-label="Expand code editor"
+          title="Expand code editor"
+          @click="codeCollapsed = false"
+        ><IconCode :size="17" /></Button>
         <div class="panel-toolbar">
           <div class="toolbar-title"><IconCode :size="16" /><span>Code</span></div>
-          <span v-if="isGenerating" class="read-only-label">Read only while generating</span>
-          <span v-else-if="saveStatus === 'saving'" class="read-only-label">Saving edit…</span>
-          <span v-else-if="saveStatus === 'saved'" class="read-only-label">Saved</span>
-          <span v-else-if="saveStatus === 'error'" class="read-only-label error-message">Save failed</span>
+          <div class="panel-toolbar-actions">
+            <span v-if="isGenerating" class="read-only-label">Read only while generating</span>
+            <span v-else-if="saveStatus === 'saving'" class="read-only-label">Saving edit...</span>
+            <span v-else-if="saveStatus === 'saved'" class="read-only-label">Saved</span>
+            <span v-else-if="saveStatus === 'error'" class="read-only-label error-message">Save failed</span>
+            <Button variant="ghost" size="icon" aria-label="Collapse code editor" title="Collapse code editor" @click="toggleCodePanel">
+              <IconChevronLeft :size="16" />
+            </Button>
+          </div>
         </div>
         <div class="code-body">
           <nav class="file-tree" aria-label="Generated files">
@@ -561,13 +699,39 @@ function refreshPreview() {
         </div>
       </section>
 
-      <section class="panel preview-panel" :class="{ 'mobile-active': mobilePanel === 'preview' }">
+      <div
+        v-if="!codeCollapsed && !previewCollapsed"
+        class="panel-resizer"
+        role="separator"
+        aria-label="Resize code editor and preview"
+        aria-orientation="vertical"
+        tabindex="0"
+        @pointerdown.prevent="startPanelResize"
+        @keydown="resizePanelsWithKeyboard"
+      ><span /></div>
+
+      <section class="panel preview-panel" :class="{ 'mobile-active': mobilePanel === 'preview', 'is-collapsed': previewCollapsed }">
+        <Button
+          v-if="previewCollapsed"
+          class="collapsed-panel-button"
+          variant="ghost"
+          size="icon"
+          aria-label="Expand preview"
+          title="Expand preview"
+          @click="previewCollapsed = false"
+        ><IconExternalLink :size="17" /></Button>
         <div class="panel-toolbar">
           <div class="toolbar-title"><IconExternalLink :size="16" /><span>Preview</span></div>
           <div class="preview-actions">
             <span class="preview-url">genesis.local</span>
+            <Button variant="ghost" size="icon" aria-label="Open preview in new tab" title="Open preview in new tab" @click="openPreviewInNewTab">
+              <IconExternalLink :size="16" />
+            </Button>
             <Button variant="ghost" size="icon" aria-label="Refresh preview" @click="refreshPreview">
               <IconRefresh :size="16" />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="Collapse preview" title="Collapse preview" @click="togglePreviewPanel">
+              <IconChevronRight :size="16" />
             </Button>
           </div>
         </div>
@@ -578,6 +742,7 @@ function refreshPreview() {
           </div>
           <iframe
             ref="previewFrame"
+            :key="previewFrameKey"
             title="Generated HighLevel application preview"
             sandbox="allow-scripts allow-forms"
             :srcdoc="previewDocument"
@@ -608,8 +773,9 @@ function refreshPreview() {
                 <Badge v-if="snapshot.id === currentSnapshotId">Current</Badge>
                 <Badge v-else>{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.provider }}</Badge>
               </div>
-              <p>{{ snapshot.prompt || snapshot.summary }}</p>
-              <span>{{ snapshot.fileCount }} files</span>
+              <p v-if="snapshot.prompt"><strong>Request:</strong> {{ snapshot.prompt }}</p>
+              <p v-if="snapshot.summary"><strong>Result:</strong> {{ snapshot.summary }}</p>
+              <span>{{ snapshot.fileCount }} files, {{ snapshot.provider }}</span>
             </div>
             <Button
               variant="secondary"
@@ -623,6 +789,46 @@ function refreshPreview() {
         </div>
         </SheetContent>
     </Sheet>
+
+    <Sheet v-model:open="attentionOpen">
+      <SheetContent aria-describedby="attention-description">
+        <div class="dialog-heading">
+          <div>
+            <SheetTitle>Workspace needs attention</SheetTitle>
+            <SheetDescription id="attention-description">Details from the latest failed operation.</SheetDescription>
+          </div>
+          <SheetClose as-child><Button variant="ghost" size="icon" aria-label="Close issue details">×</Button></SheetClose>
+        </div>
+        <div class="attention-detail" role="alert">
+          <strong>What happened</strong>
+          <p>{{ generationError }}</p>
+          <span v-if="generationError.includes('401') || generationError.toLowerCase().includes('sign in')">
+            Refresh your sign-in first. If the message names OPENAI_API_KEY, update that Firebase secret and redeploy the generation function.
+          </span>
+        </div>
+      </SheetContent>
+    </Sheet>
+
+    <Dialog v-model:open="projectEditorOpen">
+      <DialogContent aria-describedby="rename-project-description">
+        <form @submit.prevent="saveProjectName">
+          <div class="dialog-heading">
+            <div>
+              <DialogTitle>Rename project</DialogTitle>
+              <DialogDescription id="rename-project-description">Change the name shown in the workspace and project list.</DialogDescription>
+            </div>
+            <DialogClose as-child><Button type="button" variant="ghost" size="icon" aria-label="Close rename dialog">×</Button></DialogClose>
+          </div>
+          <label for="workspace-project-name">Project name</label>
+          <Input id="workspace-project-name" v-model="projectName" required autofocus />
+          <p v-if="projectEditError" class="form-error" role="alert">{{ projectEditError }}</p>
+          <div class="dialog-actions">
+            <DialogClose as-child><Button type="button" variant="ghost">Cancel</Button></DialogClose>
+            <Button type="submit" :disabled="projectSaving || !projectName.trim()">{{ projectSaving ? 'Saving' : 'Save name' }}</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
 
     <Sheet v-model:open="diffOpen">
       <SheetContent class="diff-dialog" aria-describedby="diff-description">

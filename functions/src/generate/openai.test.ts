@@ -56,4 +56,15 @@ describe('OpenAI streaming transport', () => {
     expect(requestBody).toContain('interpret contacts,\\nconversations, and calendars as HighLevel contacts')
     expect(requestBody).toContain('window.genesis.highlevel.contacts.list(parameters)')
   })
+
+  it('explains how to recover when OpenAI rejects the configured key', async () => {
+    process.env.OPENAI_API_KEY = 'expired-key'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { message: 'Incorrect API key provided.' },
+    }), { status: 401, headers: { 'Content-Type': 'application/json' } })))
+
+    await expect(generateWithOpenAi('Build contacts', {})).rejects.toThrow(
+      'OpenAI rejected OPENAI_API_KEY (401)',
+    )
+  })
 })

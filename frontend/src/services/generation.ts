@@ -10,22 +10,33 @@ type GenerateOptions = {
 }
 
 const demoFiles = {
-  'index.html': `<main class="shell">
+  'index.html': `<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.12"></script>
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script>
+<main id="app" class="shell">
   <header>
     <div>
       <p class="eyebrow">HighLevel workspace</p>
       <h1>Contact pulse</h1>
       <p class="subtitle">Recent relationships and next appointments in one focused view.</p>
     </div>
-    <button id="refresh">Refresh</button>
+    <button :disabled="loading" @click="loadDashboard">{{ loading ? 'Refreshing...' : 'Refresh' }}</button>
   </header>
   <section class="summary" aria-label="Summary">
-    <article><span>Active contacts</span><strong id="contact-count">-</strong></article>
-    <article><span>Appointments</span><strong id="appointment-count">-</strong></article>
+    <article><span>Active contacts</span><strong>{{ filteredContacts.length }}</strong></article>
+    <article><span>Appointments</span><strong>{{ appointmentStatus }}</strong></article>
   </section>
   <section class="list-section">
-    <div class="section-heading"><h2>Recent contacts</h2><input id="search" placeholder="Search contacts" /></div>
-    <div id="contacts" class="contact-list"><p class="empty">Loading HighLevel data...</p></div>
+    <div class="section-heading"><h2>Recent contacts</h2><input v-model="search" aria-label="Search contacts" placeholder="Search contacts" /></div>
+    <div class="contact-list">
+      <p v-if="error" class="empty" role="alert">{{ error }}</p>
+      <p v-else-if="loading" class="empty">Loading HighLevel data...</p>
+      <p v-else-if="!filteredContacts.length" class="empty">No contacts found.</p>
+      <article v-for="contact in filteredContacts" :key="contact.id || contact.email" class="contact">
+        <strong>{{ contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'Unnamed contact' }}</strong>
+        <span>{{ contact.email || 'No email' }}</span>
+        <span>{{ contact.added || 'Recent' }}</span>
+      </article>
+    </div>
   </section>
 </main>`,
   'styles.css': `:root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; background: #141411; color: #f4f1e8; }
@@ -49,77 +60,59 @@ button { background: #e8bd62; color: #1b1914; font-weight: 700; cursor: pointer;
 .contact span { color: #8e8b82; }
 .empty { color: #77746c; padding: 32px 0; }
 @media (max-width: 620px) { .shell { padding: 24px 18px; } header, .section-heading { align-items: stretch; flex-direction: column; } .summary { grid-template-columns: 1fr; } .summary article + article { border-left: 0; border-top: 1px solid #33322d; padding-left: 0; } .contact { grid-template-columns: 1fr; gap: 4px; } }`,
-  'app.js': `const demoContacts = [
+  'app.js': `const { computed, createApp, ref } = Vue;
+
+const demoContacts = [
   { name: 'Maya Rivera', email: 'maya@northstar.studio', added: 'Today' },
   { name: 'Adrian Okafor', email: 'adrian@westward.co', added: 'Yesterday' },
   { name: 'Linnea Berg', email: 'linnea@fieldwork.design', added: 'Sep 7' },
 ];
 
-async function loadDashboard() {
-  let contacts = demoContacts;
-  let appointments = [];
-  if (window.genesis?.highlevel) {
-    const result = await window.genesis.highlevel.contacts.list({ limit: 20 });
-    contacts = result.contacts || result.items || contacts;
-    try {
-      const calendarResult = await window.genesis.highlevel.calendars.list({});
-      const calendar = (calendarResult.calendars || [])[0];
-      if (calendar?.id) {
+createApp({
+  setup() {
+    const contacts = ref(demoContacts);
+    const appointmentStatus = ref('0');
+    const search = ref('');
+    const loading = ref(false);
+    const error = ref('');
+    const filteredContacts = computed(() => {
+      const query = search.value.trim().toLowerCase();
+      return query ? contacts.value.filter((contact) => JSON.stringify(contact).toLowerCase().includes(query)) : contacts.value;
+    });
+
+    async function loadDashboard() {
+      loading.value = true;
+      error.value = '';
+      try {
+        if (!window.genesis?.highlevel) {
+          contacts.value = demoContacts;
+          appointmentStatus.value = 'Demo';
+          return;
+        }
+        const result = await window.genesis.highlevel.contacts.list({ limit: 20 });
+        contacts.value = result.contacts || result.items || demoContacts;
+        const calendarResult = await window.genesis.highlevel.calendars.list({});
+        const calendar = (calendarResult.calendars || [])[0];
+        if (!calendar?.id) {
+          appointmentStatus.value = '0';
+          return;
+        }
         const startTime = String(Date.now());
         const endTime = String(Date.now() + 30 * 24 * 60 * 60 * 1000);
         const appointmentResult = await window.genesis.highlevel.appointments.list({ calendarId: calendar.id, startTime, endTime });
-        appointments = appointmentResult.appointments || appointmentResult.events || [];
+        appointmentStatus.value = String((appointmentResult.appointments || appointmentResult.events || []).length);
+      } catch (cause) {
+        error.value = cause instanceof Error ? cause.message : 'Could not load HighLevel data.';
+        appointmentStatus.value = 'Unavailable';
+      } finally {
+        loading.value = false;
       }
-    } catch (error) {
-      const count = document.querySelector('#appointment-count');
-      count.textContent = 'Unavailable';
-      count.title = error instanceof Error ? error.message : 'Could not load appointments.';
     }
-  }
-  window.dashboardContacts = contacts;
-  renderContacts(contacts);
-  document.querySelector('#contact-count').textContent = String(contacts.length);
-  const appointmentCount = document.querySelector('#appointment-count');
-  if (appointmentCount.textContent !== 'Unavailable') appointmentCount.textContent = String(appointments.length);
-}
 
-function renderContacts(contacts) {
-  const container = document.querySelector('#contacts');
-  container.textContent = '';
-  if (!contacts.length) {
-    const empty = document.createElement('p');
-    empty.className = 'empty';
-    empty.textContent = 'No contacts found.';
-    container.append(empty);
-    return;
-  }
-  for (const contact of contacts) {
-    const row = document.createElement('article');
-    row.className = 'contact';
-    const name = document.createElement('strong');
-    name.textContent = contact.name || [contact.firstName, contact.lastName].filter(Boolean).join(' ') || 'Unnamed contact';
-    const email = document.createElement('span');
-    email.textContent = contact.email || 'No email';
-    const added = document.createElement('span');
-    added.textContent = contact.added || 'Recent';
-    row.append(name, email, added);
-    container.append(row);
-  }
-}
-
-document.querySelector('#search').addEventListener('input', (event) => {
-  const query = event.target.value.toLowerCase();
-  renderContacts((window.dashboardContacts || []).filter((contact) => JSON.stringify(contact).toLowerCase().includes(query)));
-});
-document.querySelector('#refresh').addEventListener('click', loadDashboard);
-loadDashboard().catch((error) => {
-  const container = document.querySelector('#contacts');
-  container.textContent = '';
-  const message = document.createElement('p');
-  message.className = 'empty';
-  message.textContent = error instanceof Error ? error.message : 'Could not load HighLevel data.';
-  container.append(message);
-});`,
+    loadDashboard();
+    return { appointmentStatus, error, filteredContacts, loadDashboard, loading, search };
+  },
+}).mount('#app');`,
 }
 
 const wait = (milliseconds: number, signal: AbortSignal) =>

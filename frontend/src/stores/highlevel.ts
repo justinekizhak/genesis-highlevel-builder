@@ -31,18 +31,26 @@ export const useHighLevelStore = defineStore('highlevel', () => {
 
   async function request(path: string, init?: RequestInit) {
     const auth = useAuthStore()
-    const token = await auth.getIdToken()
+    let token = await auth.getIdToken()
     if (!token || !functionsBase) throw new Error('Firebase and the Functions base URL must be configured first.')
-    const response = await fetch(`${functionsBase}/${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...init?.headers,
-      },
-    })
+    const send = () => fetch(`${functionsBase}/${path}`, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...init?.headers,
+        },
+      })
+    let response = await send()
+    if (response.status === 401) {
+      token = await auth.getIdToken(true)
+      if (token) response = await send()
+    }
     const body = await response.json()
-    if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status}).`)
+    if (!response.ok) {
+      const fallback = response.status === 401 ? 'Your sign-in expired. Sign out and sign in again.' : `Request failed (${response.status}).`
+      throw new Error(body.error ?? fallback)
+    }
     return body
   }
 

@@ -11,6 +11,16 @@ export type GenerationContext = {
   recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
+export async function persistUserMessage(input: { uid: string; projectId: string; prompt: string; generationId: string }) {
+  const projectReference = await requireOwnedProject(input.uid, input.projectId)
+  await projectReference.collection('messages').doc(`${input.generationId}-user`).set({
+    role: 'user',
+    content: input.prompt,
+    generationId: input.generationId,
+    createdAt: Timestamp.now(),
+  })
+}
+
 export async function requireOwnedProject(uid: string, projectId: string) {
   const reference = getFirestore().collection('projects').doc(projectId)
   const snapshot = await reference.get()
@@ -66,10 +76,8 @@ export async function persistGeneration(input: {
   const messages = projectReference.collection('messages')
   const snapshotReference = projectReference.collection('snapshots').doc(input.snapshotId)
   const now = Timestamp.now()
-  const assistantTime = Timestamp.fromMillis(now.toMillis() + 1)
 
-  batch.set(messages.doc(), { role: 'user', content: input.prompt, generationId: input.generationId, createdAt: now })
-  batch.set(messages.doc(), { role: 'assistant', content: input.application.summary, generationId: input.generationId, createdAt: assistantTime })
+  batch.set(messages.doc(`${input.generationId}-assistant`), { role: 'assistant', content: input.application.summary, generationId: input.generationId, createdAt: now })
   batch.set(snapshotReference, {
     generationId: input.generationId,
     prompt: input.prompt,
@@ -103,8 +111,7 @@ export async function persistPartialGeneration(input: {
   const now = Timestamp.now()
   const summary = input.summary || 'Generation stopped before the response completed.'
   const messages = projectReference.collection('messages')
-  batch.set(messages.doc(), { role: 'user', content: input.prompt, generationId: input.generationId, createdAt: now })
-  batch.set(messages.doc(), {
+  batch.set(messages.doc(`${input.generationId}-assistant`), {
     role: 'assistant',
     content: summary,
     generationId: input.generationId,

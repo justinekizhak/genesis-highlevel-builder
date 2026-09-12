@@ -76,9 +76,10 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
   }
 
-  async function getIdToken() {
+  async function getIdToken(forceRefresh = false) {
     if (!firebaseEnabled) return undefined
-    return requireFirebaseAuth().currentUser?.getIdToken()
+    await initialize()
+    return requireFirebaseAuth().currentUser?.getIdToken(forceRefresh)
   }
 
   return { user, initializing, error, isAuthenticated, isDemoMode, initialize, signIn, signUp, signOut, getIdToken }
