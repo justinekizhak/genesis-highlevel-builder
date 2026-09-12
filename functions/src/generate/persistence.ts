@@ -11,6 +11,85 @@ export type GenerationContext = {
   recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
 }
 
+export class GenerationLockedError extends Error {}
+
+const GENERATION_LOCK_STALE_MS = 6 * 60_000
+
+type GenerationLock = {
+  generationId?: string
+  startedAt?: Timestamp
+}
+
+type GenerationCancellation = {
+  generationId?: string
+  requestedAt?: Timestamp
+}
+
+export function isGenerationLockStale(startedAt: Timestamp, now = Timestamp.now()): boolean {
+  return now.toMillis() - startedAt.toMillis() > GENERATION_LOCK_STALE_MS
+}
+
+/**
+ * Guards against two concurrent generations on the same project (double-submit, two tabs):
+ * without this, both would burn rate-limit budget and money, and whichever finishes last would
+ * silently overwrite the other's files.
+ */
+export async function acquireGenerationLock(uid: string, projectId: string, generationId: string) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  await getFirestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(projectReference)
+    const lock = snapshot.get('generationLock') as GenerationLock | undefined
+    if (lock?.startedAt && !isGenerationLockStale(lock.startedAt)) {
+      throw new GenerationLockedError('A generation is already running for this project. Wait for it to finish, or stop it, before starting another.')
+    }
+    transaction.update(projectReference, { generationLock: { generationId, startedAt: Timestamp.now() } })
+  })
+}
+
+export async function releaseGenerationLock(uid: string, projectId: string, generationId: string) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  await getFirestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(projectReference)
+    const lock = snapshot.get('generationLock') as GenerationLock | undefined
+    const cancellation = snapshot.get('generationCancellation') as GenerationCancellation | undefined
+    const updates: Record<string, unknown> = {}
+    if (lock?.generationId === generationId) updates.generationLock = FieldValue.delete()
+    if (cancellation?.generationId === generationId) updates.generationCancellation = FieldValue.delete()
+    if (Object.keys(updates).length) transaction.update(projectReference, updates)
+  })
+}
+
+export async function requestGenerationCancellation(uid: string, projectId: string, generationId: string) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  return getFirestore().runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(projectReference)
+    const lock = snapshot.get('generationLock') as GenerationLock | undefined
+    const isMatchingActiveLock = lock?.generationId === generationId
+      && (!lock.startedAt || !isGenerationLockStale(lock.startedAt))
+    transaction.update(projectReference, {
+      ...(lock?.generationId === generationId && lock.startedAt && isGenerationLockStale(lock.startedAt)
+        ? { generationLock: FieldValue.delete() }
+        : {}),
+      generationCancellation: { generationId, requestedAt: Timestamp.now() },
+    })
+    return { status: isMatchingActiveLock ? 'cancel_requested' as const : 'not_running' as const }
+  })
+}
+
+export async function observeGenerationCancellation(
+  uid: string,
+  projectId: string,
+  generationId: string,
+  onCancel: () => void,
+  onError: (error: Error) => void,
+) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  return projectReference.onSnapshot((snapshot) => {
+    const cancellation = snapshot.get('generationCancellation') as GenerationCancellation | undefined
+    if (cancellation?.generationId === generationId && cancellation.requestedAt) onCancel()
+  }, onError)
+}
+
 export async function persistUserMessage(input: { uid: string; projectId: string; prompt: string; generationId: string }) {
   const projectReference = await requireOwnedProject(input.uid, input.projectId)
   await projectReference.collection('messages').doc(`${input.generationId}-user`).set({
@@ -162,6 +241,7 @@ export async function listProjectSnapshots(uid: string, projectId: string) {
     generationId: document.get('generationId'),
     prompt: document.get('prompt') ?? '',
     summary: document.get('summary') ?? '',
+    label: document.get('label') ?? '',
     provider: document.get('provider') ?? 'unknown',
     kind: document.get('kind') ?? 'generation',
     fileCount: Object.keys(document.get('files') ?? {}).length,
@@ -174,6 +254,19 @@ export async function loadSnapshotFiles(uid: string, projectId: string, snapshot
   const snapshot = await projectReference.collection('snapshots').doc(snapshotId).get()
   if (!snapshot.exists) throw new Error('Snapshot was not found.')
   return { files: (snapshot.get('files') as Record<string, string> | undefined) ?? {} }
+}
+
+const snapshotEditableFields = { message: 'label', description: 'summary' } as const
+export type SnapshotEditableField = keyof typeof snapshotEditableFields
+
+export async function updateSnapshotField(uid: string, projectId: string, snapshotId: string, field: SnapshotEditableField, value: string) {
+  const projectReference = await requireOwnedProject(uid, projectId)
+  const snapshotReference = projectReference.collection('snapshots').doc(snapshotId)
+  const snapshot = await snapshotReference.get()
+  if (!snapshot.exists) throw new Error('Snapshot was not found.')
+  const key = snapshotEditableFields[field]
+  await snapshotReference.update({ [key]: field === 'message' ? (value || FieldValue.delete()) : value })
+  return { id: snapshotId, field, value }
 }
 
 export async function saveProjectFiles(uid: string, projectId: string, files: Record<string, string>) {

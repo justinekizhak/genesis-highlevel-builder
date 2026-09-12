@@ -13,14 +13,46 @@ type OperationDefinition = {
 }
 
 export const highLevelOperations = {
-  'contacts.list': { method: 'GET', path: '/contacts/', allowedQuery: ['limit', 'startAfterId', 'query'], location: 'query' },
-  'contacts.create': { method: 'POST', path: '/contacts/', allowedBody: ['firstName', 'lastName', 'name', 'email', 'phone', 'source', 'tags'], location: 'body' },
-  'contacts.update': { method: 'PUT', path: '/contacts/:contactId', allowedBody: ['firstName', 'lastName', 'name', 'email', 'phone', 'source', 'tags'], location: 'none' },
-  'conversations.list': { method: 'GET', path: '/conversations/search', allowedQuery: ['limit', 'startAfterDate'], location: 'query' },
-  'conversations.messages': { method: 'GET', path: '/conversations/:conversationId/messages', allowedQuery: ['limit', 'lastMessageId'], location: 'none' },
-  'conversations.send': { method: 'POST', path: '/conversations/messages', allowedBody: ['type', 'contactId', 'message', 'html', 'subject', 'status'], location: 'none' },
+  'contacts.list': { method: 'GET', path: '/contacts/', allowedQuery: ['limit', 'startAfterId', 'startAfter', 'query'], location: 'query' },
+  'contacts.create': {
+    method: 'POST',
+    path: '/contacts/',
+    allowedBody: [
+      'firstName', 'lastName', 'name', 'email', 'phone', 'address1', 'city', 'state', 'postalCode', 'website',
+      'timezone', 'companyName', 'gender', 'country', 'assignedTo', 'source', 'dnd', 'tags', 'customFields', 'dateOfBirth',
+    ],
+    location: 'body',
+  },
+  'contacts.update': {
+    method: 'PUT',
+    path: '/contacts/:contactId',
+    allowedBody: [
+      'firstName', 'lastName', 'name', 'email', 'phone', 'address1', 'city', 'state', 'postalCode', 'website',
+      'timezone', 'country', 'assignedTo', 'source', 'dnd', 'tags', 'customFields', 'dateOfBirth',
+    ],
+    location: 'none',
+  },
+  'conversations.list': {
+    method: 'GET',
+    path: '/conversations/search',
+    allowedQuery: [
+      'limit', 'startAfterDate', 'contactId', 'assignedTo', 'followers', 'mentions', 'query', 'sort', 'sortBy', 'id',
+      'lastMessageType', 'lastMessageAction', 'lastMessageDirection', 'status',
+    ],
+    location: 'query',
+  },
+  'conversations.messages': { method: 'GET', path: '/conversations/:conversationId/messages', allowedQuery: ['limit', 'lastMessageId', 'type'], location: 'none' },
+  'conversations.send': {
+    method: 'POST',
+    path: '/conversations/messages',
+    allowedBody: [
+      'type', 'contactId', 'message', 'html', 'subject', 'status', 'attachments', 'emailFrom', 'emailTo', 'emailCc',
+      'emailBcc', 'fromNumber', 'toNumber', 'replyMessageId', 'templateId', 'threadId', 'appointmentId',
+    ],
+    location: 'none',
+  },
   'calendars.list': { method: 'GET', path: '/calendars/', allowedQuery: ['groupId', 'showDrafted'], location: 'query' },
-  'calendars.availability': { method: 'GET', path: '/calendars/:calendarId/free-slots', allowedQuery: ['startDate', 'endDate', 'timezone', 'userId'], location: 'none' },
+  'calendars.availability': { method: 'GET', path: '/calendars/:calendarId/free-slots', allowedQuery: ['startDate', 'endDate', 'timezone', 'userId', 'userIds'], location: 'none' },
   'appointments.list': { method: 'GET', path: '/calendars/events', allowedQuery: ['calendarId', 'userId', 'groupId', 'startTime', 'endTime'], location: 'query' },
 } as const satisfies Record<string, OperationDefinition>
 

@@ -10,20 +10,18 @@ export class RateLimitError extends Error {}
 export async function enforceRateLimit(uid: string, bucket: string, limit: number, windowSeconds: number, message?: string) {
   const windowId = Math.floor(Date.now() / (windowSeconds * 1_000))
   const reference = getFirestore().collection('rateLimits').doc(`${uid}_${bucket}_${windowId}`)
-  const count = await getFirestore().runTransaction(async (transaction) => {
+  await getFirestore().runTransaction(async (transaction) => {
     const snapshot = await transaction.get(reference)
     const current = (snapshot.get('count') as number | undefined) ?? 0
-    if (current >= limit) return current
+    if (current >= limit) {
+      const window = windowSeconds >= 60 ? `${windowSeconds / 60} min` : `${windowSeconds}s`
+      throw new RateLimitError(message ?? `Too many requests. Limit is ${limit} per ${window}. Wait a moment and try again.`)
+    }
     transaction.set(reference, {
       uid,
       bucket,
       count: FieldValue.increment(1),
       expiresAt: Timestamp.fromMillis((windowId + 1) * windowSeconds * 1_000),
     }, { merge: true })
-    return current + 1
   })
-  if (count > limit) {
-    const window = windowSeconds >= 60 ? `${windowSeconds / 60} min` : `${windowSeconds}s`
-    throw new RateLimitError(message ?? `Too many requests. Limit is ${limit} per ${window}. Wait a moment and try again.`)
-  }
 }

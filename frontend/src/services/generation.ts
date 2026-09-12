@@ -3,6 +3,7 @@ import type { ChatMessage, GeneratedFile, GenerationEvent, ProjectSnapshot } fro
 type GenerateOptions = {
   prompt: string
   projectId: string
+  generationId: string
   currentFiles: Record<string, GeneratedFile>
   idToken?: string
   signal: AbortSignal
@@ -68,24 +69,60 @@ function requireStreamingFunctionsBaseUrl() {
   return `https://us-central1-${projectId}.cloudfunctions.net`
 }
 
+const generationLockRetryDelays = [150, 250, 400, 650, 1_000, 1_500]
+
+function waitForGenerationLock(delay: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'))
+      return
+    }
+    const timeout = window.setTimeout(() => {
+      signal.removeEventListener('abort', abort)
+      resolve()
+    }, delay)
+    const abort = () => {
+      window.clearTimeout(timeout)
+      reject(signal.reason ?? new DOMException('The operation was aborted.', 'AbortError'))
+    }
+    signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
 export async function generateApplication(options: GenerateOptions) {
   const baseUrl = requireStreamingFunctionsBaseUrl()
   if (!options.idToken) throw new Error('Sign in again before generating.')
-  const response = await fetch(`${baseUrl}/generateApp`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.idToken}` },
-    body: JSON.stringify({
-      prompt: options.prompt,
-      projectId: options.projectId,
-    }),
-    signal: options.signal,
-  })
-  if (!response.ok || !response.body) {
-    const body = await response.json().catch(() => ({})) as { error?: string }
-    throw new Error(body.error ?? `Generation request failed (${response.status})`)
-  }
+  for (let attempt = 0; ; attempt += 1) {
+    const response = await fetch(`${baseUrl}/generateApp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.idToken}` },
+      body: JSON.stringify({
+        prompt: options.prompt,
+        projectId: options.projectId,
+        generationId: options.generationId,
+      }),
+      signal: options.signal,
+    })
+    if (response.status === 409 && attempt < generationLockRetryDelays.length) {
+      await waitForGenerationLock(generationLockRetryDelays[attempt]!, options.signal)
+      continue
+    }
+    if (!response.ok || !response.body) {
+      const body = await response.json().catch(() => ({})) as { error?: string }
+      throw new Error(body.error ?? `Generation request failed (${response.status})`)
+    }
 
-  await consumeGenerationStream(response, options.onEvent)
+    await consumeGenerationStream(response, options.onEvent)
+    return
+  }
+}
+
+export async function cancelApplicationGeneration(projectId: string, generationId: string, idToken?: string) {
+  if (!idToken) throw new Error('Sign in again to stop this generation.')
+  return authenticatedRequest<{ status: 'cancel_requested' | 'not_running' }>('cancelGeneration', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ projectId, generationId }),
+  })
 }
 
 export type ProjectApplicationState = {
@@ -138,6 +175,20 @@ export async function loadSnapshotFiles(projectId: string, snapshotId: string, i
   const query = new URLSearchParams({ projectId, snapshotId })
   const result = await authenticatedRequest<{ files: Record<string, string> }>(`projectSnapshotFiles?${query}`, idToken)
   return result.files
+}
+
+export async function updateSnapshotField(
+  projectId: string,
+  snapshotId: string,
+  field: 'message' | 'description',
+  value: string,
+  idToken?: string,
+) {
+  if (!idToken) throw new Error('Sign in again to edit this snapshot.')
+  return authenticatedRequest<{ id: string; field: string; value: string }>('updateSnapshot', idToken, {
+    method: 'POST',
+    body: JSON.stringify({ projectId, snapshotId, field, value }),
+  })
 }
 
 export async function restoreApplicationSnapshot(projectId: string, snapshotId: string, idToken?: string) {

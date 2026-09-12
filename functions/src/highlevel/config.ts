@@ -4,6 +4,7 @@ export const highLevelClientId = defineString('HL_CLIENT_ID', { default: '' })
 export const highLevelClientSecret = defineSecret('HL_CLIENT_SECRET')
 export const highLevelRedirectUri = defineString('HL_REDIRECT_URI', { default: '' })
 export const highLevelApiBase = defineString('HL_API_BASE', { default: 'https://services.leadconnectorhq.com' })
+export const highLevelWebhookPublicKey = defineString('HL_WEBHOOK_PUBLIC_KEY', { default: '' })
 export const applicationBaseUrl = defineString('APP_BASE_URL', { default: 'http://localhost:5173' })
 
 export const highLevelScopes = [

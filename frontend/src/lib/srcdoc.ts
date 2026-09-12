@@ -66,10 +66,9 @@ function buildHighLevelBridge(broadcastChannelName?: string) {
 }
 
 const emptyPreviewMarkup = `<main class="genesis-empty-preview">
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3v18M3 12h18" stroke-linecap="round"/></svg>
   <p>Describe an app in the chat to see it here.</p>
 </main>`
-const emptyPreviewStyles = `:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#141411;font-family:ui-sans-serif,system-ui,sans-serif}.genesis-empty-preview{display:grid;justify-items:center;gap:10px;color:#6f6c62;text-align:center;padding:24px}.genesis-empty-preview svg{color:#4a4740}.genesis-empty-preview p{margin:0;font-size:13px}`
+const emptyPreviewStyles = `:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#141411;font-family:ui-sans-serif,system-ui,sans-serif}.genesis-empty-preview{color:#777870;text-align:center;padding:24px}.genesis-empty-preview p{margin:0;font-size:13px}`
 
 export function buildSrcdoc(
   files: Record<string, GeneratedFile>,

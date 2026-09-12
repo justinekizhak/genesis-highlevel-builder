@@ -25,6 +25,7 @@ export type ProjectSnapshot = {
   generationId?: string
   prompt: string
   summary: string
+  label?: string
   provider: string
   kind?: 'generation' | 'partial' | 'backup' | 'manual'
   fileCount: number

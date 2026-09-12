@@ -40,10 +40,10 @@ async function submit() {
     <section class="auth-context">
       <div class="auth-brand"><span><IconBraces :size="20" /></span><strong>Genesis</strong></div>
       <div class="auth-copy">
-        <h1>Describe an app. Get one wired to your real HighLevel data.</h1>
-        <span>Genesis turns a plain-English prompt into a working web app — a contact list, an inbox, a booking view — connected to your actual contacts, conversations, and calendar in HighLevel. Never sample data, never a mockup.</span>
+        <h1>Build the HighLevel workspace your team needs.</h1>
+        <span>Create focused tools for contacts, conversations, and bookings. Describe your workflow, then refine the app alongside its live preview and code.</span>
       </div>
-      <div class="auth-security"><IconShieldLock :size="18" /><span>Your HighLevel connection stays on our server. The app Genesis generates never sees your login or API keys.</span></div>
+      <div class="auth-security"><IconShieldLock :size="18" /><span>Your HighLevel credentials stay protected on the server and are never exposed to generated apps.</span></div>
     </section>
 
     <section class="auth-form-panel">

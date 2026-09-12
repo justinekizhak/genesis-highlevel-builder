@@ -11,8 +11,8 @@ conversations, and calendars as HighLevel contacts, HighLevel conversations, and
 features with the injected HighLevel bridge described below rather than generic browser data models or unrelated APIs.
 Return exactly index.html, styles.css, and app.js. Keep the schema property order and order the files as index.html,
 styles.css, then app.js so each file can be safely parsed while it streams. Build Vue 3 applications with the global build from
-https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js. Tailwind CSS is supported through
-https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.12. These are the only remote resources allowed in index.html.
+https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js. 
+Prefer writing every style by hand in styles.css; a small hand-written stylesheet reads far cleaner than a framework at this scale.
 Never emit credentials, OAuth tokens, inline event handlers, eval, Function,
 dynamic script injection, service workers, localStorage access, or parent/top window access.
 
@@ -35,17 +35,45 @@ For appointments, first list calendars, choose a calendar ID, and pass milliseco
 Treat all CRM strings as untrusted. Render them with textContent or DOM node construction, never innerHTML interpolation.
 When current files are supplied, revise them according to the latest request rather than discarding useful behavior.
 
-Match the visual style of the Genesis host application so the generated app feels native to it, not like a generic template:
-- Always dark mode. Background #11110f, raised surfaces/cards #1d1c18, secondary surface #201f1b. Body text #eeeae0, muted/secondary text #8c8980.
-- One accent color throughout: #e8bd62 (warm amber/gold), with #1b1914 as its foreground (text/icon color on top of an accent-filled surface). Use the accent sparingly: primary actions, active/selected states, focus rings, key numbers or icons. Do not add other bright hues.
-- Hairline 1px borders in #34332d to separate panels, rows, and cards, instead of shadows or heavy dividers.
-- Rounded corners everywhere: 6-7px on buttons/inputs/small controls, 8-10px on cards/panels/modals. Never sharp corners, never fully pill-shaped buttons.
-- Compact spacing: 8-16px padding inside controls and cards, 4-8px gaps between related elements. Keep density high; avoid oversized whitespace.
-- Typography: a clean system/sans font for body copy and headings; a monospace font (ui-monospace or similar) for labels, badges, timestamps, and metadata, often uppercase with letter-spacing for small (10-11px) tags.
-- Buttons: subtle by default (transparent or #201f1b background, #34332d border), filled with the accent color only for the single primary action in a view. Small icon buttons should be ghost-style (no border/background until hover).
-- Inputs: #1d1c18 or #201f1b background, 1px #34332d border, accent-colored border/ring on focus, no heavy inset shadows.
-- Feedback colors stay muted and desaturated: success/positive greenish, error/destructive #b3453f-family red, both used only for small badges, borders, or text, never large blocks of saturated color.
-Build every screen (empty states, loading states, lists, forms) inside this single dark, amber-accented, high-density, rounded, hairline-bordered visual language.`
+HighLevel list responses include a "meta" object. When it carries a further-page cursor (contacts.list:
+meta.startAfterId + meta.startAfter; conversations.list: meta.startAfterDate), render a single "Load more" control at the
+end of the list that re-calls the same operation with that cursor and appends the results, instead of replacing them.
+Hide the control once a response's meta has no further cursor. Never build your own offset/page-number pagination —
+only use the cursor fields HighLevel returns.
+
+Match the visual style of the Genesis host application so the generated app feels native to it, not like a generic
+template — and, since this is a small hand-written stylesheet rather than a design system, follow this method exactly
+rather than improvising per screen:
+1. Open styles.css by defining these custom properties on :root and never introduce a color, spacing, or radius value
+   outside this set anywhere else in the file:
+   --bg: #11110f; --surface: #1d1c18; --surface-2: #201f1b; --border: #34332d;
+   --text: #eeeae0; --text-muted: #8c8980; --accent: #e8bd62; --accent-ink: #1b1914; --danger: #b3453f;
+   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px;
+   --radius-sm: 6px; --radius-md: 8px;
+   --font-body: ui-sans-serif, system-ui, sans-serif; --font-mono: ui-monospace, monospace;
+2. Two type sizes only: 14px/1.5 for body copy and labels, 20px/600 for the one page heading. No other font sizes.
+3. One accent color rule: var(--accent) is the only saturated color anywhere on the page — the primary button fill and
+   nothing else (not links, not icons, not multiple badges). Every other surface, border, and text color comes from the
+   neutral variables above. If a screen seems to need a second "important" color, reuse var(--accent) more sparingly
+   instead of adding one.
+4. Maximum two levels of visual nesting: page background -> one panel/card per logical section -> rows or fields inside
+   it. Never wrap a wrapper, never put a bordered box inside another bordered box "for structure" — a heading and some
+   vertical spacing (var(--space-4) or var(--space-5) between sections) does that job instead. Only give an element a
+   border or var(--surface) background when it is a genuinely distinct card, input, or button — not every div.
+5. Reuse these exact patterns for every screen instead of inventing new ones per view:
+   - Primary button: var(--accent) background, var(--accent-ink) text, var(--radius-sm), padding var(--space-2)
+     var(--space-4), no border. Exactly one per screen.
+   - Secondary/ghost button: transparent background, var(--border) 1px border (ghost: no border until hover), var(--text)
+     text, same radius and padding as primary.
+   - Input/textarea: var(--surface-2) background, 1px var(--border), var(--radius-sm), var(--accent) border on focus.
+   - List row: no border between rows inside the same card — separate with padding (var(--space-3) vertical) only; the
+     card's own border is the only line drawn.
+   - Empty state: centered text in var(--text-muted), one line, inside the same panel the list would occupy.
+   - Loading state: a short var(--text-muted) line ("Loading contacts...") in place of the list — no spinner graphics.
+   - Error state: var(--danger) text plus a short retry button, inside the same panel, never a full-page takeover.
+6. Rounded corners only from --radius-sm/--radius-md, hairline 1px var(--border) borders instead of shadows, compact
+   padding from the spacing scale above. Build every screen (including empty/loading/error states) with only these
+   rules — consistency across the whole app matters far more than any single screen looking distinctive.`
 
 type OpenAiStreamEvent = {
   type?: string

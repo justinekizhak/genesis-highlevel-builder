@@ -33,7 +33,7 @@ Generation is refused server-side unless the project has a connected HighLevel `
 - One HighLevel location connected per user.
 - Allowlisted HighLevel bridge operations only: `contacts.list/create/update`, `conversations.list/messages/send`, `calendars.list/availability`, `appointments.list`. No other CRM surface is reachable from generated code.
 - No offline/demo mode exists or is planned — HighLevel connection is mandatory for generation, by design.
-- Not yet implemented: HighLevel webhooks, pagination patterns for HighLevel list endpoints in generated apps.
+- HighLevel webhooks (Ed25519-verified, current signature scheme only) fan relevant events out to the workspace; generated apps handle HighLevel list pagination via the `meta` cursor fields.
 
 ## Evidence on Hand
 

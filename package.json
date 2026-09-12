@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.19.0",
   "scripts": {
+    "dev": "sh scripts/run-dev.sh",
     "install:all": "pnpm --dir frontend install && pnpm --dir functions install",
     "build": "pnpm --dir frontend build && pnpm --dir functions build",
     "test": "pnpm --dir frontend test && pnpm --dir functions test",

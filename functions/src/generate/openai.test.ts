@@ -57,6 +57,17 @@ describe('OpenAI streaming transport', () => {
     expect(requestBody).toContain('window.genesis.highlevel.contacts.list(parameters)')
   })
 
+  it('never asks the model to reach for Tailwind or another CSS framework', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(new ReadableStream({ start: (c) => c.close() }), { status: 200 })))
+    await generateWithOpenAi('Build contacts', {}).catch(() => {})
+    const requestBody = String(vi.mocked(fetch).mock.calls[0]?.[1]?.body)
+    expect(requestBody).not.toContain('@tailwindcss/browser')
+    expect(requestBody).toContain('do not add Tailwind')
+    expect(requestBody).toContain('--accent: #e8bd62')
+    expect(requestBody).toContain('Load more')
+  })
+
   it('explains how to recover when OpenAI rejects the configured key', async () => {
     process.env.OPENAI_API_KEY = 'expired-key'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({

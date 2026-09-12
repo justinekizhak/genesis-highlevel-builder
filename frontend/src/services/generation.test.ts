@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { consumeGenerationStream, parseSseBlock } from './generation'
+import { describe, expect, it, vi } from 'vitest'
+import { consumeGenerationStream, generateApplication, parseSseBlock } from './generation'
 import type { GenerationEvent } from '@/types/generation'
 
 function streamResponse(chunks: string[]) {
@@ -35,5 +35,34 @@ describe('generation SSE transport', () => {
     await expect(consumeGenerationStream(streamResponse([
       'event: file_start\ndata: {"type":"file_start","path":"index.html","language":"html"}\n\n',
     ]), () => undefined)).rejects.toThrow('ended before completion')
+  })
+})
+
+describe('generateApplication', () => {
+  it('retries a temporary project lock and then consumes the generation', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: 'locked' }), { status: 409 }))
+      .mockResolvedValueOnce(streamResponse([
+        'event: complete\ndata: {"type":"complete","generationId":"g1"}\n\n',
+      ]))
+    vi.stubGlobal('fetch', fetchMock)
+    const events: GenerationEvent[] = []
+
+    await generateApplication({
+      prompt: 'Build a dashboard',
+      projectId: 'project-1',
+      generationId: '13f4f45c-4fc1-4fc9-89bc-29f712340eb2',
+      currentFiles: {},
+      idToken: 'token',
+      signal: new AbortController().signal,
+      onEvent: (event) => events.push(event),
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
+      body: expect.stringContaining('13f4f45c-4fc1-4fc9-89bc-29f712340eb2'),
+    }))
+    expect(events).toEqual([{ type: 'complete', generationId: 'g1' }])
+    vi.unstubAllGlobals()
   })
 })

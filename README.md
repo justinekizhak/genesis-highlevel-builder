@@ -20,7 +20,7 @@ HighLevel isn't connected, Genesis won't generate — that's enforced both in th
 | Live preview, sandboxed iframe | [`lib/srcdoc.ts`](frontend/src/lib/srcdoc.ts) | Generated dashboard lists your sandbox contacts |
 | Snapshots on generation **and** manual edits + restore | [`generate/persistence.ts`](functions/src/generate/persistence.ts), snapshot sheet in `WorkspaceShell.vue` | Edit a file → History icon → see a "Manual edit" entry → Restore |
 | Rate limiting | [`http/rate-limit.ts`](functions/src/http/rate-limit.ts) | 5 generations/min, 50/day, 60 HL-proxy calls/min per user |
-| Bonuses implemented | see below | Stop button, refinement prompts, "View changes" diff, rate limiting |
+| Bonuses implemented | see below | Stop button, refinement prompts, "View changes" diff, rate limiting, generated-app pagination, HighLevel webhooks |
 
 ## What it does
 
@@ -32,15 +32,13 @@ HighLevel isn't connected, Genesis won't generate — that's enforced both in th
 6. **Iterate** — follow-up prompts revise the existing files rather than starting over.
 7. **Snapshots** — every generation *and* every manual edit appends a restorable point-in-time snapshot.
 
-### Bonus features implemented
+### Bonus features implemented (all 6)
 - Generation **cancellation** (Stop button aborts the model stream mid-flight; completed files are kept)
-- **Iterative refinement** (the model receives current files and recent chat history, and revises rather than discards)
+- **Iterative refinement** (the model receives current files and recent chat history, and revises rather than discards) — the editor now animates only the diff against the previous version instead of retyping the whole file, using [`lib/diff-reveal.ts`](frontend/src/lib/diff-reveal.ts)
 - **Diff view** per generation (line-level added/removed counts against the pre-generation files)
 - **Rate limiting** — per-user Firestore fixed-window counters: 5 generations/min, 50/day, 60 HighLevel-proxy calls/min, all returning a clear 429 message
-
-### Bonus features not implemented (see "What I would improve")
-- Generated-app pagination patterns for HighLevel list endpoints
-- HighLevel webhook support
+- **HighLevel pagination** — the system prompt teaches generated apps to read `meta.startAfterId`/`meta.startAfterDate` from list responses and render a "Load more" control
+- **Webhook support** — [`webhook.ts`](functions/src/webhook.ts) verifies HighLevel's Ed25519-signed webhook deliveries, dedupes replays, purges the stored connection on `UNINSTALL`, and fans relevant events out to `users/{uid}/hlEvents` for the workspace to react to
 
 ## Local development
 
@@ -98,6 +96,7 @@ pnpm run test
    ```
 
 6. Register the deployed `hlAuthCallback` Function URL as the marketplace app redirect URI. If scopes change after a location was connected, reinstall/re-authorize the app in the sandbox so the new grant is reflected in its tokens.
+7. **Webhooks (optional bonus)** — in the app's Advanced Settings → Webhooks, set the webhook URL to the deployed `hlWebhook` Function URL and enable ContactCreate, ContactUpdate, ContactDelete, InboundMessage, AppointmentCreate, AppointmentUpdate. Add HighLevel's published Ed25519 public key (PEM, with literal `\n` line breaks) to `HL_WEBHOOK_PUBLIC_KEY` in your project's `functions/.env.<project-id>` file, alongside `HL_CLIENT_ID` and the other non-secret parameters. Deliveries are rejected with 401 until this is set — safe by default, since webhooks are off until deliberately configured. An `UNINSTALL` event purges the user's stored HighLevel tokens automatically.
 
 The generated iframe cannot call HighLevel directly. It can request only these allowlisted bridge operations:
 
@@ -145,23 +144,23 @@ The non-secret production Functions parameters are stored in `functions/.env.jk-
 ## Architecture decisions
 
 - The browser authenticates streaming POST requests with Firebase ID tokens using `fetch`; native `EventSource` cannot send the required authorization header and request body.
-- OpenAI structured-output deltas are parsed server-side into `token`, `file_start`, `file_delta`, `file_complete`, snapshot, completion, and error events.
+- OpenAI structured-output deltas are parsed server-side into `token`, `file_start`, `file_delta`, `file_complete`, snapshot, completion, and error events; failed or cancelled generations keep completed files and persist a partial snapshot rather than losing everything.
 - Generation reloads three fixed project files and a bounded recent conversation from Firestore instead of trusting source code supplied by the browser; the fixed set keeps validation, storage, and sandbox execution bounded.
 - Generation is refused server-side unless the project has a connected HighLevel `locationId` — the "real data only" requirement is enforced at the API boundary, not just hidden behind a UI gate.
-- Current editable files are stored separately from server-write-only generation snapshots.
-- Every manual file save also appends a restorable snapshot, alongside snapshots from generations and pre-restore backups, so nothing edited by hand is ever unrecoverable.
-- Generated applications run in a CSP-restricted iframe with no direct network access; HighLevel access crosses an allowlisted `postMessage` bridge and authenticated server proxy, so OAuth credentials never reach generated code. The system prompt instructs the model to call that bridge immediately and never fabricate placeholder CRM data.
+- Current editable files are stored separately from append-only generation snapshots; every manual file save also appends a restorable snapshot, so nothing edited by hand is ever unrecoverable.
+- Generated applications run in a CSP-restricted iframe with no direct network access; HighLevel access crosses an allowlisted `postMessage` bridge and authenticated server proxy, so OAuth credentials never reach generated code.
 - HighLevel refresh tokens are rotated behind a short Firestore lease to prevent concurrent refresh races.
-- Rate limiting uses per-user Firestore fixed-window counters rather than an in-memory store, since Cloud Functions instances are ephemeral and don't share memory across invocations.
-- Failed or cancelled generations keep visible partial output and persist a partial snapshot when possible.
+- Firestore transactions are the one concurrency primitive used server-side: per-user fixed-window rate-limit counters (Cloud Functions instances are ephemeral and share no memory) and a per-project generation lock that rejects a second concurrent generation with a clear error instead of letting two streams silently race and overwrite each other.
+- A second, testable content validator scans every generated file for banned APIs (`fetch`, `eval`, `localStorage`, non-bridge `window.parent` access, etc.) and secret-shaped strings before persisting — defense-in-depth behind the CSP sandbox, which remains the actual security boundary.
+- HighLevel webhooks verify only the current Ed25519 signature scheme (`x-ghl-signature`), not the legacy RSA transition header — a deliberately smaller trust surface traded for a little backward compatibility.
 
 ## What I would improve
 
-- Add emulator-backed integration tests for authenticated SSE, snapshots, OAuth, and Firestore rules.
-- Add HighLevel webhook support (e.g., a new contact created) and generated-app pagination patterns for HighLevel list endpoints — both bonus items, currently unimplemented.
+- Add emulator-backed integration tests for authenticated SSE, OAuth, and Firestore rules (unit tests now cover the pure logic heavily; full emulator integration is still missing).
 - Persist snapshot-to-snapshot diffs and move very large comparisons into a Web Worker.
-- Configure a Firestore TTL policy on `rateLimits.expiresAt` so old rate-limit windows are purged automatically instead of accumulating.
+- Enable the Firestore TTL policy on `rateLimits`, `webhookDedupe`, and `users/*/hlEvents` in the deployed project — the `expiresAt` fields are written; enabling TTL is a one-time `gcloud` step per environment.
 - Add end-to-end sandbox fixtures for confirmed HighLevel writes and calendar availability.
+- Move the live preview to a dedicated `/preview.html` origin with its own CSP headers instead of inheriting the host page's (srcdoc inherits the parent CSP by spec).
 
 ## Deployment notes
 

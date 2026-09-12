@@ -6,23 +6,32 @@ import { z } from 'zod'
 import { buildApplicationEvents } from './generate/application.js'
 import { generateWithOpenAi, openAiApiKey, openAiModel } from './generate/openai.js'
 import {
+  acquireGenerationLock,
+  GenerationLockedError,
   listProjectSnapshots,
   loadGenerationContext,
   loadProjectState,
   loadSnapshotFiles,
+  observeGenerationCancellation,
   persistGeneration,
   persistPartialGeneration,
   persistUserMessage,
+  releaseGenerationLock,
+  requestGenerationCancellation,
   restoreProjectSnapshot,
   saveProjectFiles,
+  updateSnapshotField,
 } from './generate/persistence.js'
 import { StructuredApplicationStream } from './generate/structured-stream.js'
+import { UnsafeGenerationError, validateGeneratedApplication } from './generate/validate.js'
+import { handleHighLevelWebhookPayload, webhookPayloadSchema } from './webhook.js'
 import {
   applicationBaseUrl,
   highLevelClientId,
   highLevelClientSecret,
   highLevelRedirectUri,
   highLevelScopes,
+  highLevelWebhookPublicKey,
 } from './highlevel/config.js'
 import { executeHighLevelOperation, highLevelOperations, type HighLevelOperation } from './highlevel/proxy.js'
 import { exchangeAuthorizationCode, fetchLocationName, getConnectionSummary, saveConnection } from './highlevel/tokens.js'
@@ -36,6 +45,12 @@ initializeApp()
 const generateRequestSchema = z.object({
   prompt: z.string().trim().min(3).max(4_000),
   projectId: z.string().trim().min(1).max(128),
+  generationId: z.string().uuid().optional(),
+}).strict()
+
+const cancelGenerationSchema = z.object({
+  projectId: z.string().trim().min(1).max(128),
+  generationId: z.string().uuid(),
 }).strict()
 
 const proxyRequestSchema = z.object({
@@ -68,9 +83,19 @@ const snapshotFilesSchema = z.object({
   snapshotId: z.string().trim().min(1).max(128),
 })
 
+const updateSnapshotFieldSchema = z.object({
+  projectId: z.string().trim().min(1).max(128),
+  snapshotId: z.string().trim().min(1).max(128),
+  field: z.enum(['message', 'description']),
+  value: z.string().trim().max(2_000),
+})
+
 function httpError(response: Parameters<typeof applyCors>[1], cause: unknown) {
   const message = cause instanceof Error ? cause.message : 'Unexpected server error.'
-  const status = cause instanceof AuthenticationError ? 401 : cause instanceof RateLimitError ? 429 : 400
+  const status = cause instanceof AuthenticationError ? 401
+    : cause instanceof RateLimitError ? 429
+    : cause instanceof GenerationLockedError ? 409
+    : 400
   response.status(status).json({ error: message })
 }
 
@@ -96,6 +121,10 @@ export const generateApp = onRequest(
       currentFiles: Record<string, string>
     } | undefined
     let generationPersisted = false
+    let generationCancellationRequested = false
+    let lockHeld = false
+    let lockedProject: { uid: string; projectId: string; generationId: string } | undefined
+    let stopWatchingCancellation: (() => void) | undefined
     applyCors(request, response)
     if (request.method === 'OPTIONS') {
       response.status(204).end()
@@ -113,9 +142,12 @@ export const generateApp = onRequest(
       const currentFiles = generationContext.files
       if (!openAiApiKey.value()) throw new Error('AI generation is not configured. Set the OPENAI_API_KEY secret and redeploy the generation function.')
       if (!generationContext.project.locationId) throw new Error('Connect a HighLevel location to this project before generating an app.')
+      const generationId = input.generationId ?? crypto.randomUUID()
+      await acquireGenerationLock(user.uid, input.projectId, generationId)
+      lockHeld = true
+      lockedProject = { uid: user.uid, projectId: input.projectId, generationId }
       await enforceRateLimit(user.uid, 'generate-minute', 5, 60, "You're generating too quickly. Wait about a minute and try again.")
       await enforceRateLimit(user.uid, 'generate-day', 50, 86_400, "You've reached today's generation limit (50). Try again tomorrow.")
-      const generationId = crypto.randomUUID()
       await persistUserMessage({ uid: user.uid, projectId: input.projectId, prompt: input.prompt, generationId })
       logger.info('Starting application generation', {
         projectId: input.projectId,
@@ -131,6 +163,16 @@ export const generateApp = onRequest(
       response.flushHeaders()
 
       const abortController = new AbortController()
+      stopWatchingCancellation = await observeGenerationCancellation(
+        user.uid,
+        input.projectId,
+        generationId,
+        () => {
+          generationCancellationRequested = true
+          abortController.abort(new Error('Generation cancelled by the user.'))
+        },
+        (watchError) => logger.error('Could not observe generation cancellation', watchError),
+      )
       response.on('close', () => {
         if (!response.writableEnded) abortController.abort()
       })
@@ -159,6 +201,7 @@ export const generateApp = onRequest(
             if (!response.destroyed) response.write(serializeSse(event))
           }
         }, generationContext)
+        validateGeneratedApplication(application)
         const built = buildApplicationEvents(application, 160, { generationId })
         await persistGeneration({
           uid: user.uid,
@@ -178,9 +221,20 @@ export const generateApp = onRequest(
         }
       } finally {
         clearInterval(heartbeat)
+        stopWatchingCancellation?.()
+        stopWatchingCancellation = undefined
+        if (lockHeld && lockedProject) {
+          lockHeld = false
+          await releaseGenerationLock(lockedProject.uid, lockedProject.projectId, lockedProject.generationId).catch((lockError) => logger.error('Could not release generation lock', lockError))
+        }
       }
     } catch (cause) {
       logger.error('Application generation failed', cause)
+      stopWatchingCancellation?.()
+      stopWatchingCancellation = undefined
+      if (lockHeld && lockedProject) {
+        await releaseGenerationLock(lockedProject.uid, lockedProject.projectId, lockedProject.generationId).catch((lockError) => logger.error('Could not release generation lock', lockError))
+      }
       if (!generationPersisted && partialGeneration) {
         await persistPartialGeneration({
           uid: partialGeneration.uid,
@@ -197,12 +251,37 @@ export const generateApp = onRequest(
         return
       }
       if (response.destroyed) return
-      const message = cause instanceof Error ? cause.message : 'Application generation failed.'
-      response.write(serializeSse({ type: 'error', code: 'GENERATION_FAILED', message, recoverable: true }))
+      const message = generationCancellationRequested
+        ? 'Generation stopped by the user.'
+        : cause instanceof Error ? cause.message : 'Application generation failed.'
+      const code = generationCancellationRequested
+        ? 'GENERATION_CANCELLED'
+        : cause instanceof UnsafeGenerationError ? 'UNSAFE_OUTPUT' : 'GENERATION_FAILED'
+      response.write(serializeSse({ type: 'error', code, message, recoverable: true }))
       response.end()
     }
   },
 )
+
+export const cancelGeneration = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') {
+    response.status(204).end()
+    return
+  }
+  if (request.method !== 'POST') {
+    response.status(405).json({ error: 'Method not allowed' })
+    return
+  }
+  try {
+    const user = await requireFirebaseUser(request)
+    const input = cancelGenerationSchema.parse(request.body)
+    const result = await requestGenerationCancellation(user.uid, input.projectId, input.generationId)
+    response.json(result)
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
 
 export const projectSnapshots = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
   applyCors(request, response)
@@ -239,6 +318,19 @@ export const projectSnapshotFiles = onRequest({ region: 'us-central1', cors: fal
     const user = await requireFirebaseUser(request)
     const input = snapshotFilesSchema.parse(request.query)
     response.json(await loadSnapshotFiles(user.uid, input.projectId, input.snapshotId))
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
+
+export const updateSnapshot = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const input = updateSnapshotFieldSchema.parse(request.body)
+    response.json(await updateSnapshotField(user.uid, input.projectId, input.snapshotId, input.field, input.value))
   } catch (cause) {
     httpError(response, cause)
   }
@@ -398,3 +490,18 @@ export const hlProxy = onRequest(
     }
   },
 )
+
+export const hlWebhook = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const payload = webhookPayloadSchema.parse(request.body)
+    const rawBody = request.rawBody ?? Buffer.from(JSON.stringify(request.body))
+    const signature = request.header('x-ghl-signature')
+    const outcome = await handleHighLevelWebhookPayload(rawBody, signature, highLevelWebhookPublicKey.value(), payload)
+    if (outcome === 'invalid_signature') return void response.status(401).json({ error: 'Invalid webhook signature.' })
+    response.status(200).json({ ok: true, outcome })
+  } catch (cause) {
+    logger.error('HighLevel webhook processing failed', cause)
+    response.status(200).json({ ok: true })
+  }
+})

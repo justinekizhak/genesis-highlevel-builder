@@ -9,6 +9,8 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconCode,
+  IconCommand,
+  IconDownload,
   IconEdit,
   IconFileDiff,
   IconExternalLink,
@@ -39,19 +41,29 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { renderChatMarkdown } from '@/lib/markdown'
 import { buildSrcdoc } from '@/lib/srcdoc'
 import { buildGenerationDiff, type GenerationFileDiff } from '@/lib/generation-diff'
+import { buildProjectArchive, projectArchiveFilename } from '@/lib/project-archive'
 import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
 import { useTypewriter } from '@/composables/typewriter'
+import { useDiffReveal } from '@/composables/useDiffReveal'
 import DiffFileList from '@/components/workspace/DiffFileList.vue'
+import CommandPalette from '@/components/workspace/CommandPalette.vue'
+import ShortcutsDialog from '@/components/workspace/ShortcutsDialog.vue'
+import SnapshotHistory from '@/components/workspace/SnapshotHistory.vue'
+import SuggestionChips from '@/components/workspace/SuggestionChips.vue'
+import { useShortcuts } from '@/composables/useShortcuts'
 import {
+  cancelApplicationGeneration,
   generateApplication,
   listApplicationSnapshots,
   loadApplicationState,
   loadSnapshotFiles,
   restoreApplicationSnapshot,
   saveApplicationFiles,
+  updateSnapshotField,
 } from '@/services/generation'
 import { useAuthStore } from '@/stores/auth'
 import { useHighLevelStore } from '@/stores/highlevel'
@@ -91,6 +103,7 @@ const messages = ref<ChatMessage[]>([
 const prompt = ref('')
 const isLoadingProject = ref(true)
 const isGenerating = ref(false)
+const isStopping = ref(false)
 const generationError = ref('')
 const previewDocument = ref(buildSrcdoc(files.value))
 const previewFrame = ref<HTMLIFrameElement>()
@@ -119,27 +132,43 @@ const snapshotCompareDiff = ref<GenerationFileDiff[]>([])
 const snapshotCompareLoading = ref(false)
 const snapshotCompareError = ref('')
 const snapshotFilesCache = new Map<string, Record<string, string>>()
+const renamingSnapshotId = ref<string>()
+const snapshotRenameError = ref('')
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const stoppedNotice = ref('')
 const filesTouchedThisGeneration = ref<string[]>([])
 const currentGenerationId = ref<string>()
 const currentSnapshotId = ref<string>()
-const activeModel = ref('Model pending')
 const mobilePanel = ref<'chat' | 'code' | 'preview'>('chat')
 const chatCollapsed = ref(false)
 const codeCollapsed = ref(false)
 const previewCollapsed = ref(false)
+const chatWidth = ref(330)
 const codeShare = ref(52)
 const attentionOpen = ref(false)
+const commandPaletteOpen = ref(false)
+const shortcutsOpen = ref(false)
 const projectEditorOpen = ref(false)
 const projectName = ref('')
 const projectEditError = ref('')
 const projectSaving = ref(false)
-const streamSourceLabel = 'Firebase stream'
+const hasOpenOverlay = computed(() => (
+  snapshotOpen.value
+  || attentionOpen.value
+  || projectEditorOpen.value
+  || diffOpen.value
+  || Boolean(pendingWriteRequest.value)
+  || commandPaletteOpen.value
+  || shortcutsOpen.value
+))
 let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
+const refinementPaths = new Set<string>()
+const refinementBuffers = new Map<string, string>()
+const diffReveals = new Map<string, ReturnType<typeof useDiffReveal>>()
 let saveTimer: number | undefined
 let savedIndicatorTimer: number | undefined
+let cancelFallbackTimer: number | undefined
 const bridgeRequests = new Set<string>()
 const externalPreviewChannels = new Map<string, BroadcastChannel>()
 let workspaceAnimation: { cancel?: () => void } | undefined
@@ -160,16 +189,27 @@ const fileList = computed(() => Object.values(files.value))
 const activeFileDiff = computed(() => generationDiffs.value.find((file) => file.path === activePath.value))
 const statusLabel = computed(() => {
   if (generationError.value) return 'Needs attention'
+  if (isStopping.value) return 'Stopping'
   if (isGenerating.value) return 'Generating'
   return 'Ready'
 })
 const projectId = computed(() => String(route.params.projectId ?? 'local-demo'))
 const projectTitle = computed(() => projectsStore.projects.find((project) => project.id === projectId.value)?.name ?? 'Untitled project')
 const workspaceStyle = computed(() => {
-  const chat = chatCollapsed.value ? '44px' : 'minmax(250px, 330px)'
-  if (codeCollapsed.value) return { gridTemplateColumns: `${chat} 44px minmax(320px, 1fr)` }
-  if (previewCollapsed.value) return { gridTemplateColumns: `${chat} minmax(360px, 1fr) 44px` }
-  return { gridTemplateColumns: `${chat} minmax(280px, ${codeShare.value}fr) 6px minmax(300px, ${100 - codeShare.value}fr)` }
+  const chat = chatCollapsed.value ? 'minmax(44px, 44px)' : `minmax(250px, ${chatWidth.value}px)`
+  const chatResizer = chatCollapsed.value ? 'minmax(0px, 0fr)' : 'minmax(6px, 0fr)'
+  const code = codeCollapsed.value
+    ? 'minmax(44px, 0fr)'
+    : previewCollapsed.value
+      ? 'minmax(360px, 100fr)'
+      : `minmax(280px, ${codeShare.value}fr)`
+  const resizer = codeCollapsed.value || previewCollapsed.value ? 'minmax(0px, 0fr)' : 'minmax(6px, 0fr)'
+  const preview = previewCollapsed.value
+    ? 'minmax(44px, 0fr)'
+    : codeCollapsed.value
+      ? 'minmax(320px, 100fr)'
+      : `minmax(300px, ${100 - codeShare.value}fr)`
+  return { gridTemplateColumns: `${chat} ${chatResizer} ${code} ${resizer} ${preview}` }
 })
 
 function cloneFiles(source: Record<string, GeneratedFile>) {
@@ -180,6 +220,16 @@ function renderPreview() {
   previewDocument.value = buildSrcdoc(files.value, { enableHighLevelBridge: highLevelStore.connection.connected })
 }
 
+function toggleChatPanel() {
+  chatCollapsed.value = !chatCollapsed.value
+}
+
+function focusComposer() {
+  chatCollapsed.value = false
+  mobilePanel.value = 'chat'
+  nextTick(() => document.getElementById('prompt')?.focus())
+}
+
 function toggleCodePanel() {
   codeCollapsed.value = !codeCollapsed.value
   if (codeCollapsed.value) previewCollapsed.value = false
@@ -188,6 +238,38 @@ function toggleCodePanel() {
 function togglePreviewPanel() {
   previewCollapsed.value = !previewCollapsed.value
   if (previewCollapsed.value) codeCollapsed.value = false
+}
+
+function maxChatPanelWidth() {
+  const workspace = workspaceRoot.value?.querySelector<HTMLElement>('.workspace')
+  const availableWidth = workspace?.offsetWidth ?? 0
+  return Math.max(250, Math.min(520, availableWidth - 592))
+}
+
+function startChatPanelResize(event: PointerEvent) {
+  if (chatCollapsed.value) return
+  const maxWidth = maxChatPanelWidth()
+  const startX = event.clientX
+  const startWidth = chatWidth.value
+  const move = (moveEvent: PointerEvent) => {
+    chatWidth.value = Math.min(maxWidth, Math.max(250, startWidth + moveEvent.clientX - startX))
+  }
+  const stop = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', stop)
+    window.removeEventListener('pointercancel', stop)
+    document.body.classList.remove('is-resizing-panels')
+  }
+  document.body.classList.add('is-resizing-panels')
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', stop, { once: true })
+  window.addEventListener('pointercancel', stop, { once: true })
+}
+
+function resizeChatPanelWithKeyboard(event: KeyboardEvent) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  event.preventDefault()
+  chatWidth.value = Math.min(maxChatPanelWidth(), Math.max(250, chatWidth.value + (event.key === 'ArrowRight' ? 16 : -16)))
 }
 
 function startPanelResize(event: PointerEvent) {
@@ -352,7 +434,7 @@ onMounted(async () => {
     }).catch(() => [])
     const state = await queryClient.fetchQuery({
       queryKey: ['project-state', projectId.value],
-      queryFn: async () => loadApplicationState(projectId.value, await authStore.getIdToken(true)),
+      queryFn: async () => loadApplicationState(projectId.value, await authStore.getIdToken()),
     })
     if (state?.files) {
       hydrateFiles(state.files)
@@ -375,7 +457,9 @@ onBeforeUnmount(() => {
   externalPreviewChannels.clear()
   if (saveTimer) window.clearTimeout(saveTimer)
   if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
+  if (cancelFallbackTimer) window.clearTimeout(cancelFallbackTimer)
   controller?.abort()
+  clearRefinementState()
   workspaceAnimation?.cancel?.()
 })
 watch(() => highLevelStore.connection.connected, renderPreview)
@@ -398,7 +482,7 @@ function updateActiveFile(content: string) {
 
 async function persistManualFiles(): Promise<boolean> {
   try {
-    const { snapshotId } = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken(true))
+    const { snapshotId } = await saveApplicationFiles(projectId.value, files.value, await authStore.getIdToken())
     if (snapshotId) currentSnapshotId.value = snapshotId
     saveStatus.value = 'saved'
     if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
@@ -423,8 +507,10 @@ async function openSnapshotHistory() {
     await queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
     snapshots.value = await queryClient.fetchQuery({
       queryKey: ['project-snapshots', projectId.value],
-      queryFn: async () => listApplicationSnapshots(projectId.value, await authStore.getIdToken(true)),
+      queryFn: async () => listApplicationSnapshots(projectId.value, await authStore.getIdToken()),
     })
+    const latestSnapshot = snapshots.value[0]
+    if (latestSnapshot) await toggleSnapshotCompare(latestSnapshot, 0)
   } catch (error) {
     snapshotError.value = error instanceof Error ? error.message : 'Could not load snapshot history.'
   } finally {
@@ -443,7 +529,7 @@ function toGeneratedFiles(source: Record<string, string>): Record<string, Genera
 async function fetchSnapshotFiles(snapshotId: string) {
   const cached = snapshotFilesCache.get(snapshotId)
   if (cached) return cached
-  const fetched = await loadSnapshotFiles(projectId.value, snapshotId, await authStore.getIdToken(true))
+  const fetched = await loadSnapshotFiles(projectId.value, snapshotId, await authStore.getIdToken())
   snapshotFilesCache.set(snapshotId, fetched)
   return fetched
 }
@@ -471,13 +557,31 @@ async function toggleSnapshotCompare(snapshot: ProjectSnapshot, index: number) {
   }
 }
 
+async function editSnapshotField(snapshot: ProjectSnapshot, field: 'message' | 'description', value: string) {
+  renamingSnapshotId.value = snapshot.id
+  snapshotRenameError.value = ''
+  try {
+    await updateSnapshotField(projectId.value, snapshot.id, field, value, await authStore.getIdToken())
+    const target = snapshots.value.find((entry) => entry.id === snapshot.id)
+    if (target) {
+      if (field === 'message') target.label = value
+      else target.summary = value
+    }
+    await queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
+  } catch (error) {
+    snapshotRenameError.value = error instanceof Error ? error.message : 'Could not update this snapshot.'
+  } finally {
+    renamingSnapshotId.value = undefined
+  }
+}
+
 async function restoreSnapshot(snapshot: ProjectSnapshot) {
   if (snapshot.id === currentSnapshotId.value || restoringSnapshotId.value) return
   if (saveTimer) window.clearTimeout(saveTimer)
   restoringSnapshotId.value = snapshot.id
   snapshotError.value = ''
   try {
-    const restored = await restoreApplicationSnapshot(projectId.value, snapshot.id, await authStore.getIdToken(true))
+    const restored = await restoreApplicationSnapshot(projectId.value, snapshot.id, await authStore.getIdToken())
     hydrateFiles(restored.files)
     currentSnapshotId.value = restored.snapshotId
     await queryClient.invalidateQueries({ queryKey: ['project-state', projectId.value] })
@@ -496,11 +600,18 @@ function messageText(message: ChatMessage) {
   return message.content.slice(0, messageTypewriter.revealedLength.value)
 }
 
+function isMessageTyping(message: ChatMessage) {
+  return message.id === typingMessageId.value
+}
+
+function renderedMessageHtml(message: ChatMessage) {
+  return renderChatMarkdown(messageText(message))
+}
+
 function handleEvent(event: GenerationEvent) {
   switch (event.type) {
     case 'generation_started':
       currentGenerationId.value = event.generationId
-      activeModel.value = event.model ?? 'OpenAI'
       break
     case 'token': {
       const last = messages.value.at(-1)
@@ -515,18 +626,50 @@ function handleEvent(event: GenerationEvent) {
       }
       break
     }
-    case 'file_start':
-      files.value[event.path] = { path: event.path, language: event.language, content: '' }
+    case 'file_start': {
+      const existedBefore = Boolean(filesBeforeGeneration?.[event.path]?.content)
+      if (existedBefore) {
+        // Refinement of a file that already has content: keep the old content on screen and
+        // buffer the incoming stream silently, so only the eventual diff animates in, not a
+        // full clear-and-retype of the whole file.
+        refinementPaths.add(event.path)
+        refinementBuffers.set(event.path, '')
+      } else {
+        refinementPaths.delete(event.path)
+        files.value[event.path] = { path: event.path, language: event.language, content: '' }
+      }
       openFile(event.path)
       mobilePanel.value = 'code'
       if (!filesTouchedThisGeneration.value.includes(event.path)) filesTouchedThisGeneration.value.push(event.path)
       break
+    }
     case 'file_delta': {
+      if (refinementPaths.has(event.path)) {
+        refinementBuffers.set(event.path, (refinementBuffers.get(event.path) ?? '') + event.delta)
+        break
+      }
       const file = files.value[event.path]
       if (file) files.value[event.path] = { ...file, content: file.content + event.delta }
       break
     }
     case 'file_complete': {
+      if (refinementPaths.has(event.path)) {
+        const before = filesBeforeGeneration?.[event.path]?.content ?? ''
+        const after = refinementBuffers.get(event.path) ?? ''
+        refinementPaths.delete(event.path)
+        refinementBuffers.delete(event.path)
+        if (after.length !== event.size) {
+          generationError.value = `The stream for ${event.path} ended unexpectedly. Partial output has been preserved.`
+        }
+        const reveal = useDiffReveal()
+        diffReveals.get(event.path)?.stop()
+        diffReveals.set(event.path, reveal)
+        reveal.start(before, after, (text) => {
+          const file = files.value[event.path]
+          if (file) files.value[event.path] = { ...file, content: text }
+        })
+        break
+      }
       const file = files.value[event.path]
       if (!file || file.content.length !== event.size) {
         generationError.value = `The stream for ${event.path} ended unexpectedly. Partial output has been preserved.`
@@ -548,7 +691,7 @@ function handleEvent(event: GenerationEvent) {
       typingMessageId.value = undefined
       break
     case 'error':
-      generationError.value = event.message
+      if (!(isStopping.value && event.code === 'GENERATION_CANCELLED')) generationError.value = event.message
       messageTypewriter.finish()
       typingMessageId.value = undefined
       break
@@ -569,17 +712,20 @@ async function submitPrompt(suggestion?: string) {
   stoppedNotice.value = ''
   filesTouchedThisGeneration.value = []
   showInlineDiff.value = false
+  clearRefinementState()
   isGenerating.value = true
   messages.value.push({ id: crypto.randomUUID(), role: 'user', content: value })
   filesBeforeGeneration = cloneFiles(files.value)
   controller = new AbortController()
+  currentGenerationId.value = crypto.randomUUID()
 
   try {
     await generateApplication({
       prompt: value,
       projectId: projectId.value,
+      generationId: currentGenerationId.value,
       currentFiles: filesBeforeGeneration ?? {},
-      idToken: await authStore.getIdToken(true),
+      idToken: await authStore.getIdToken(),
       signal: controller.signal,
       onEvent: handleEvent,
     })
@@ -588,19 +734,53 @@ async function submitPrompt(suggestion?: string) {
       generationError.value = error instanceof Error ? error.message : 'Generation failed unexpectedly.'
     }
   } finally {
+    const wasStopped = isStopping.value
+    if (cancelFallbackTimer) window.clearTimeout(cancelFallbackTimer)
+    cancelFallbackTimer = undefined
     isGenerating.value = false
+    isStopping.value = false
     controller = undefined
+    if (wasStopped) {
+      stoppedNotice.value = `Stopped after ${filesTouchedThisGeneration.value.length} file${filesTouchedThisGeneration.value.length === 1 ? '' : 's'}. Nothing lost. Partial output stays in the editor.`
+    }
     await nextTick()
   }
 }
 
-function stopGeneration() {
-  controller?.abort()
+function clearRefinementState() {
+  for (const reveal of diffReveals.values()) reveal.stop()
+  diffReveals.clear()
+  refinementPaths.clear()
+  refinementBuffers.clear()
+}
+
+async function stopGeneration() {
+  if (!controller || isStopping.value) return
+  const activeController = controller
+  isStopping.value = true
+  const generationId = currentGenerationId.value
   filesBeforeGeneration = undefined
-  isGenerating.value = false
+  clearRefinementState()
   messageTypewriter.finish()
   typingMessageId.value = undefined
-  stoppedNotice.value = `Stopped after ${filesTouchedThisGeneration.value.length} file${filesTouchedThisGeneration.value.length === 1 ? '' : 's'}. Nothing lost — partial output stays in the editor.`
+  stoppedNotice.value = 'Stopping generation… Partial output will stay in the editor.'
+  if (!generationId) {
+    activeController.abort()
+    return
+  }
+  try {
+    const result = await cancelApplicationGeneration(projectId.value, generationId, await authStore.getIdToken())
+    if (result.status === 'not_running') {
+      activeController.abort()
+      return
+    }
+    if (controller === activeController && isStopping.value) {
+      cancelFallbackTimer = window.setTimeout(() => activeController.abort(), 5_000)
+    }
+  } catch {
+    // Closing the stream remains a reliable fallback if the explicit cancellation request fails.
+    activeController.abort()
+  }
 }
 
 function refreshPreview() {
@@ -652,6 +832,46 @@ function openPreviewInNewTab() {
   }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
 }
+
+function downloadProjectArchive() {
+  if (!fileList.value.length || isGenerating.value) return
+  const archive = buildProjectArchive(Object.fromEntries(
+    Object.entries(files.value).map(([path, file]) => [path, file.content]),
+  ))
+  const url = URL.createObjectURL(new Blob([archive], { type: 'application/zip' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = projectArchiveFilename(projectTitle.value)
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
+async function signOutAndRedirect() {
+  await authStore.signOut()
+  await router.push('/sign-in')
+}
+
+const { list: shortcutsList } = useShortcuts([
+  { keys: 'mod+k', description: 'Open the command palette', allowWhileEditing: true, handler: () => { commandPaletteOpen.value = true } },
+  { keys: 'mod+/', description: 'Show keyboard shortcuts', allowWhileEditing: true, handler: () => { shortcutsOpen.value = true } },
+  { keys: 'mod+enter', description: 'Send the current prompt', allowWhileEditing: true, handler: () => submitPrompt() },
+  {
+    keys: 'escape',
+    description: 'Close the active dialog or stop the running generation',
+    allowWhileEditing: true,
+    handler: (event) => {
+      // Let Reka UI dismiss the topmost dialog, sheet, or command palette.
+      const startedInsideOverlay = event.target instanceof Element
+        && Boolean(event.target.closest('[data-slot="dialog-content"], [data-slot="sheet-content"], [data-slot="alert-dialog-content"]'))
+      if (hasOpenOverlay.value || startedInsideOverlay) return false
+      if (!isGenerating.value) return false
+      stopGeneration()
+    },
+  },
+  { keys: 'mod+1', description: 'Switch to the chat panel (mobile)', handler: () => { mobilePanel.value = 'chat' } },
+  { keys: 'mod+2', description: 'Switch to the code panel (mobile)', handler: () => { mobilePanel.value = 'code' } },
+  { keys: 'mod+3', description: 'Switch to the preview panel (mobile)', handler: () => { mobilePanel.value = 'preview' } },
+])
 </script>
 
 <template>
@@ -674,24 +894,42 @@ function openPreviewInNewTab() {
       </button>
 
       <div class="topbar-actions">
-        <Badge
-          variant="secondary"
-          :as="generationError ? 'button' : undefined"
-          :type="generationError ? 'button' : undefined"
-          :aria-label="generationError ? 'Show issue details' : undefined"
-          class="status-badge"
-          :class="{ active: isGenerating, attention: generationError }"
-          @click="generationError ? (attentionOpen = true) : undefined"
-        >{{ statusLabel }}</Badge>
-        <Button v-if="generationDiffs.length" variant="ghost" size="sm" @click="diffOpen = true">
-          <IconFileDiff :size="16" />Changes
-        </Button>
-        <Button variant="ghost" size="icon" aria-label="Open snapshot history" @click="openSnapshotHistory">
-          <IconHistory :size="17" />
-        </Button>
-        <Button variant="secondary" size="sm" @click="router.push('/projects')">
-          <IconPlus :size="15" /> Projects
-        </Button>
+        <div class="action-group action-group--status">
+          <Badge
+            variant="secondary"
+            :as="generationError ? 'button' : undefined"
+            :type="generationError ? 'button' : undefined"
+            :aria-label="generationError ? 'Show issue details' : undefined"
+            class="status-badge"
+            :class="{ active: isGenerating, attention: generationError }"
+            @click="generationError ? (attentionOpen = true) : undefined"
+          >{{ statusLabel }}</Badge>
+          <Button v-if="generationDiffs.length" variant="ghost" size="sm" @click="diffOpen = true">
+            <IconFileDiff :size="16" />Changes
+          </Button>
+        </div>
+
+        <div class="action-group action-group--utility">
+          <Button
+            v-if="fileList.length"
+            class="download-zip-button"
+            variant="ghost"
+            size="sm"
+            :disabled="isGenerating"
+            aria-label="Download current files as a ZIP"
+            title="Download the current files as a ZIP"
+            @click="downloadProjectArchive"
+          >
+            <IconDownload :size="15" /><span>Export</span>
+          </Button>
+          <span class="action-group-sep" aria-hidden="true"></span>
+          <Button variant="ghost" size="icon-sm" aria-label="Open command palette (Cmd+K)" title="Command palette (Cmd+K)" @click="commandPaletteOpen = true">
+            <IconCommand :size="16" />
+          </Button>
+          <Button variant="ghost" size="icon-sm" aria-label="Open snapshot history" title="Snapshot history" @click="openSnapshotHistory">
+            <IconHistory :size="16" />
+          </Button>
+        </div>
       </div>
     </header>
 
@@ -726,12 +964,18 @@ function openPreviewInNewTab() {
         <div ref="messagesContainer" class="messages" aria-live="polite">
           <article v-for="message in messages" :key="message.id" class="message" :class="message.role">
             <span>{{ message.role === 'assistant' ? 'Genesis' : 'You' }}</span>
-            <p>{{ messageText(message) }}<i v-if="message.id === typingMessageId" class="typing-cursor" /></p>
+            <div
+              v-if="message.role === 'assistant' && !isMessageTyping(message)"
+              class="message-markdown"
+              v-html="renderedMessageHtml(message)"
+            />
+            <p v-else>{{ messageText(message) }}<i v-if="isMessageTyping(message)" class="typing-cursor" /></p>
           </article>
 
           <div v-if="isGenerating" class="generation-progress">
             <IconSparkles :size="15" />
-            <span>Writing file {{ filesTouchedThisGeneration.length }} · {{ activePath }}</span>
+            <span v-if="isStopping">Stopping generation…</span>
+            <span v-else>Writing file {{ filesTouchedThisGeneration.length }} · {{ activePath }}</span>
           </div>
 
           <p v-if="generationError" class="error-message">{{ generationError }}</p>
@@ -746,11 +990,7 @@ function openPreviewInNewTab() {
         </div>
 
         <template v-else>
-          <div class="suggestions">
-            <button @click="submitPrompt('Build a contact dashboard with search and upcoming appointments')">Contact dashboard</button>
-            <button @click="submitPrompt('Show recent conversations and unread messages')">Conversation inbox</button>
-            <button @click="submitPrompt('Show this week\'s calendar availability and upcoming appointments')">Calendar view</button>
-          </div>
+          <SuggestionChips @select="submitPrompt" />
 
           <form class="composer" @submit.prevent="submitPrompt()">
             <label for="prompt">Describe the app</label>
@@ -764,7 +1004,7 @@ function openPreviewInNewTab() {
             />
             <div class="composer-footer">
               <span>Enter to send, Shift + Enter for a new line</span>
-              <Button v-if="isGenerating" type="button" variant="secondary" size="icon" aria-label="Stop generation" @click="stopGeneration">
+              <Button v-if="isGenerating" type="button" variant="secondary" size="icon" aria-label="Stop generation" :disabled="isStopping" @click="stopGeneration">
                 <IconPlayerStop :size="15" />
               </Button>
               <Button v-else type="submit" size="icon" aria-label="Generate app" :disabled="!prompt.trim()">
@@ -774,6 +1014,21 @@ function openPreviewInNewTab() {
           </form>
         </template>
       </aside>
+
+      <div
+        class="panel-resizer chat-panel-resizer"
+        :class="{ 'is-disabled': chatCollapsed }"
+        role="separator"
+        aria-label="Resize conversation panel"
+        aria-orientation="vertical"
+        :aria-hidden="chatCollapsed"
+        :aria-valuemin="250"
+        :aria-valuemax="520"
+        :aria-valuenow="Math.round(chatWidth)"
+        :tabindex="chatCollapsed ? -1 : 0"
+        @pointerdown.prevent="startChatPanelResize"
+        @keydown="resizeChatPanelWithKeyboard"
+      ><span /></div>
 
       <section class="panel code-panel" :class="{ 'mobile-active': mobilePanel === 'code', 'is-collapsed': codeCollapsed }">
         <Button
@@ -809,8 +1064,8 @@ function openPreviewInNewTab() {
             </Button>
           </div>
         </div>
-        <div class="code-body">
-          <nav class="file-tree" aria-label="Generated files">
+        <div class="code-body" :class="{ 'is-empty': !fileList.length }">
+          <nav v-if="fileList.length" class="file-tree" aria-label="Generated files">
             <span class="tree-title">Files</span>
             <button
               v-for="file in fileList"
@@ -821,14 +1076,17 @@ function openPreviewInNewTab() {
               <IconFileCode :size="15" />
               <span>{{ file.path }}</span>
             </button>
-            <p v-if="isLoadingProject" class="tree-empty">Loading files...</p>
-            <p v-else-if="!fileList.length" class="tree-empty">Waiting for the first file...</p>
           </nav>
-          <div class="editor-wrap">
+          <div class="editor-wrap" :class="{ 'is-empty': !activeFile }">
             <Tabs v-if="activeFile" v-model="activePath" class="editor-tabs-root">
               <TabsList class="editor-tabs" aria-label="Open files">
-                <TabsTrigger v-for="path in openTabs" :key="path" :value="path" class="editor-tab">
-                  <IconFileCode :size="14" />
+                <TabsTrigger
+                  v-for="path in openTabs"
+                  :key="path"
+                  :value="path"
+                  class="editor-tab"
+                >
+                  <IconFileCode :size="12" />
                   <span>{{ path }}</span>
                 </TabsTrigger>
               </TabsList>
@@ -869,22 +1127,28 @@ function openPreviewInNewTab() {
               }"
               @update:value="updateActiveFile"
             />
-            <div v-else-if="isLoadingProject" class="editor-empty" role="status" aria-label="Loading project files">
-              <IconLoader2 :size="30" class="spin" />
-              <p>Loading initial files...</p>
+            <div v-else-if="isLoadingProject" class="editor-empty code-empty-state is-loading" role="status" aria-label="Loading project files">
+              <div class="code-empty-icon"><IconLoader2 :size="24" class="spin" /></div>
+              <h2>Loading your workspace</h2>
+              <p>Checking for existing files and recent changes.</p>
             </div>
-            <div v-else class="editor-empty"><IconCode :size="30" /><p>Generated files will appear here.</p></div>
+            <div v-else class="editor-empty code-empty-state">
+              <div class="code-empty-icon"><IconCode :size="25" /></div>
+              <h2>No files yet</h2>
+              <p>Describe what you want to build. Genesis will create each file here as it works.</p>
+            </div>
           </div>
         </div>
       </section>
 
       <div
-        v-if="!codeCollapsed && !previewCollapsed"
         class="panel-resizer"
+        :class="{ 'is-disabled': codeCollapsed || previewCollapsed }"
         role="separator"
         aria-label="Resize code editor and preview"
         aria-orientation="vertical"
-        tabindex="0"
+        :aria-hidden="codeCollapsed || previewCollapsed"
+        :tabindex="codeCollapsed || previewCollapsed ? -1 : 0"
         @pointerdown.prevent="startPanelResize"
         @keydown="resizePanelsWithKeyboard"
       ><span /></div>
@@ -900,12 +1164,15 @@ function openPreviewInNewTab() {
           @click="previewCollapsed = false"
         ><IconExternalLink :size="17" /></Button>
         <div class="panel-toolbar">
-          <div class="toolbar-title"><IconExternalLink :size="16" /><span>Preview</span></div>
+          <button
+            type="button"
+            class="toolbar-title preview-title-action"
+            aria-label="Open preview in a new tab"
+            title="Open preview in a new tab"
+            @click="openPreviewInNewTab"
+          ><IconExternalLink :size="16" /><span>Preview</span></button>
           <div class="preview-actions">
             <span v-if="highLevelStore.connection.connected" class="preview-url">{{ highLevelStore.connection.locationName }}</span>
-            <Button variant="ghost" size="icon" aria-label="Open preview in new tab" title="Open preview in new tab" @click="openPreviewInNewTab">
-              <IconExternalLink :size="16" />
-            </Button>
             <Button variant="ghost" size="icon" aria-label="Refresh preview" @click="refreshPreview">
               <IconRefresh :size="16" />
             </Button>
@@ -914,7 +1181,7 @@ function openPreviewInNewTab() {
             </Button>
           </div>
         </div>
-        <div class="preview-stage">
+        <div class="preview-stage" :class="{ 'is-empty': !fileList.length }">
           <div v-if="bridgeError" class="bridge-alert" role="alert">
             <IconAlertTriangle :size="16" />
             <div>
@@ -940,62 +1207,32 @@ function openPreviewInNewTab() {
       </section>
     </section>
 
-    <Sheet v-model:open="snapshotOpen">
-        <SheetContent class="snapshot-dialog" aria-describedby="snapshot-description">
-        <div class="dialog-heading">
+    <Dialog v-model:open="snapshotOpen">
+      <DialogContent class="snapshot-workspace" aria-describedby="snapshot-description">
+        <header class="snapshot-workspace-header">
           <div>
-            <SheetTitle id="snapshot-title">Snapshot history</SheetTitle>
-            <SheetDescription id="snapshot-description">Every generation and manual edit can be restored.</SheetDescription>
+            <DialogTitle id="snapshot-title">Snapshot history</DialogTitle>
+            <DialogDescription id="snapshot-description">Review file changes and restore an earlier workspace state.</DialogDescription>
           </div>
-        </div>
-        <p v-if="snapshotLoading" class="snapshot-empty">Loading snapshots…</p>
-        <p v-else-if="snapshotError" class="form-error" role="alert">{{ snapshotError }}</p>
-        <p v-else-if="!snapshots.length" class="snapshot-empty">No snapshots yet. Generate an app to create the first one.</p>
-        <div v-else class="snapshot-list">
-          <div v-for="(snapshot, index) in snapshots" :key="snapshot.id" class="snapshot-entry">
-            <article class="snapshot-row">
-              <div>
-                <div class="snapshot-meta">
-                  <strong>{{ new Date(snapshot.createdAt).toLocaleString() }}</strong>
-                  <Badge v-if="snapshot.id === currentSnapshotId">Current</Badge>
-                  <Badge v-else variant="secondary">{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.kind === 'manual' ? 'Manual edit' : snapshot.provider }}</Badge>
-                </div>
-                <p v-if="snapshot.prompt"><strong>Request:</strong> {{ snapshot.prompt }}</p>
-                <p v-if="snapshot.summary"><strong>Result:</strong> {{ snapshot.summary }}</p>
-                <span>{{ snapshot.fileCount }} files, {{ snapshot.provider }}</span>
-              </div>
-              <div class="snapshot-row-actions">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  :class="{ 'diff-toggle-active': expandedSnapshotId === snapshot.id }"
-                  @click="toggleSnapshotCompare(snapshot, index)"
-                >
-                  <IconFileDiff :size="14" />{{ expandedSnapshotId === snapshot.id ? 'Hide diff' : 'Compare' }}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  :disabled="snapshot.id === currentSnapshotId || Boolean(restoringSnapshotId)"
-                  @click="restoreSnapshot(snapshot)"
-                >
-                  {{ restoringSnapshotId === snapshot.id ? 'Restoring…' : 'Restore' }}
-                </Button>
-              </div>
-            </article>
-            <div v-if="expandedSnapshotId === snapshot.id" class="snapshot-compare">
-              <p v-if="snapshotCompareLoading" class="snapshot-empty">Loading comparison…</p>
-              <p v-else-if="snapshotCompareError" class="form-error" role="alert">{{ snapshotCompareError }}</p>
-              <DiffFileList
-                v-else
-                :files="snapshotCompareDiff"
-                :empty-message="index === snapshots.length - 1 ? 'This is the first snapshot; nothing came before it.' : 'No file changes between these two snapshots.'"
-              />
-            </div>
-          </div>
-        </div>
-        </SheetContent>
-    </Sheet>
+        </header>
+        <SnapshotHistory
+          :snapshots="snapshots"
+          :loading="snapshotLoading"
+          :error="snapshotError"
+          :current-snapshot-id="currentSnapshotId"
+          :restoring-snapshot-id="restoringSnapshotId"
+          :expanded-snapshot-id="expandedSnapshotId"
+          :compare-diff="snapshotCompareDiff"
+          :compare-loading="snapshotCompareLoading"
+          :compare-error="snapshotCompareError"
+          :renaming-snapshot-id="renamingSnapshotId"
+          :rename-error="snapshotRenameError"
+          @restore="restoreSnapshot"
+          @compare="toggleSnapshotCompare"
+          @edit-field="editSnapshotField"
+        />
+      </DialogContent>
+    </Dialog>
 
     <Sheet v-model:open="attentionOpen">
       <SheetContent class="snapshot-dialog" aria-describedby="attention-description">
@@ -1060,11 +1297,22 @@ function openPreviewInNewTab() {
       </AlertDialogContent>
     </AlertDialog>
 
-    <footer class="statusbar">
-      <span>{{ fileList.length }} files</span>
-      <span v-if="currentSnapshotId">Snapshot ready</span>
-      <span>{{ highLevelStore.connection.connected ? 'HighLevel live' : 'HighLevel not connected' }}</span>
-      <span>{{ activeModel }} / {{ streamSourceLabel }}</span>
-    </footer>
+    <CommandPalette
+      v-model:open="commandPaletteOpen"
+      :is-generating="isGenerating"
+      :can-export="Boolean(fileList.length)"
+      @go-to-projects="router.push('/projects')"
+      @rename-project="openProjectEditor"
+      @open-snapshot-history="openSnapshotHistory"
+      @download-zip="downloadProjectArchive"
+      @open-shortcuts="shortcutsOpen = true"
+      @stop-generation="stopGeneration"
+      @focus-composer="focusComposer"
+      @toggle-chat-panel="toggleChatPanel"
+      @toggle-code-panel="toggleCodePanel"
+      @toggle-preview-panel="togglePreviewPanel"
+      @sign-out="signOutAndRedirect"
+    />
+    <ShortcutsDialog v-model:open="shortcutsOpen" :shortcuts="shortcutsList" />
   </main>
 </template>
