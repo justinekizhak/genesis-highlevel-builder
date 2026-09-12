@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-12T00:00:00.000Z",
+  "title": "Design System: Genesis",
+  "extensions": {
+    "colorMeta": {
+      "signal-amber": { "role": "primary", "displayName": "Signal Amber", "canonical": "#e8bd62", "tonalRamp": ["#3a2c12", "#5c4720", "#7e622e", "#a17d3c", "#c39f4f", "#e8bd62", "#eecb80", "#f4dba3"] },
+      "near-black-bg": { "role": "neutral", "displayName": "Near-Black", "canonical": "#11110f", "tonalRamp": ["#080807", "#0d0d0c", "#11110f", "#161613", "#1d1c18", "#26251f", "#34332d", "#454339"] },
+      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#161613", "tonalRamp": ["#080807", "#0d0d0c", "#11110f", "#161613", "#1d1c18", "#26251f", "#34332d", "#454339"] },
+      "surface-raised": { "role": "neutral", "displayName": "Surface Raised", "canonical": "#1d1c18", "tonalRamp": ["#080807", "#0d0d0c", "#11110f", "#161613", "#1d1c18", "#26251f", "#34332d", "#454339"] },
+      "ink-primary": { "role": "neutral", "displayName": "Ink Primary", "canonical": "#eeeae0", "tonalRamp": ["#8c8980", "#a3a094", "#bab6a9", "#d0ccbf", "#e4e0d4", "#eeeae0", "#f4f1e9", "#faf8f3"] },
+      "ink-muted": { "role": "neutral", "displayName": "Ink Muted", "canonical": "#8c8980", "tonalRamp": ["#3a3833", "#54524a", "#6d6a61", "#8c8980", "#a3a099", "#bab7b0", "#d0cec8", "#e4e2de"] },
+      "danger": { "role": "neutral", "displayName": "Danger", "canonical": "#b3453f", "tonalRamp": ["#2b1c1a", "#452420", "#71413c", "#8f5249", "#b3453f", "#c96b62", "#e19187", "#f0b5ae"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Auth page hero line only — the one place Genesis pitches itself." },
+      "headline": { "displayName": "Headline", "purpose": "Dashboard page-level heading." },
+      "title": { "displayName": "Title", "purpose": "Dialog and form headings." },
+      "body": { "displayName": "Body", "purpose": "Chat messages and default UI copy." },
+      "label": { "displayName": "Label", "purpose": "Panel headings, tabs, badges, timestamps — uppercase structural text." }
+    },
+    "shadows": [
+      { "name": "overlay", "value": "shadow-lg (shadcn default)", "purpose": "Dialogs, sheets, and other true overlays only." },
+      { "name": "control-rest", "value": "shadow-xs (shadcn default)", "purpose": "Resting state of outline buttons and inputs — near-invisible, not a depth cue." }
+    ],
+    "motion": [
+      { "name": "panel-resize", "value": "240ms cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "Workspace column width transitions when a panel is resized or collapsed." },
+      { "name": "list-enter", "value": "240ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Project list row enter/leave." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "620px" },
+      { "name": "md", "value": "780px" },
+      { "name": "lg", "value": "1020px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single saturated call-to-action control in the system.",
+      "html": "<button class=\"ds-btn-primary\">Connect HighLevel</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 8px 16px; border: none; border-radius: 7px; background: #e8bd62; color: #1b1914; font: 500 14px Geist, sans-serif; cursor: pointer; transition: background 0.15s; } .ds-btn-primary:hover { background: #ecc677; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(232,189,98,0.5); }"
+    },
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Secondary action button used throughout dialogs and toolbars.",
+      "html": "<button class=\"ds-btn-outline\">Cancel</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 8px 16px; border: 1px solid #34332d; border-radius: 7px; background: #11110f; color: #eeeae0; font: 500 14px Geist, sans-serif; cursor: pointer; transition: background 0.15s, border-color 0.15s; } .ds-btn-outline:hover { background: #1d1c18; border-color: #454339; } .ds-btn-outline:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(232,189,98,0.5); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Single-line field used across auth, project, and settings forms.",
+      "html": "<input class=\"ds-input\" placeholder=\"you@company.com\" />",
+      "css": ".ds-input { height: 36px; width: 100%; padding: 4px 12px; border: 1px solid #3a382f; border-radius: 6px; background: transparent; color: #eeeae0; font: 14px Geist, sans-serif; transition: border-color 0.15s, box-shadow 0.15s; } .ds-input::placeholder { color: #8c8980; } .ds-input:focus-visible { outline: none; border-color: #e8bd62; box-shadow: 0 0 0 3px rgba(232,189,98,0.5); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge-active",
+      "description": "Small pill used for connection/generation status; amber border+text when active, neutral otherwise.",
+      "html": "<span class=\"ds-badge ds-badge-active\">Connected</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; border: 1px solid #44423b; border-radius: 999px; padding: 2px 8px; background: #1c1c18; color: #c6c1b7; font: 11px Geist, sans-serif; } .ds-badge-active { border-color: #6a562d; color: #f0c66e; }"
+    },
+    {
+      "name": "Panel Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Base container used for connection rows, project rows, and dialog bodies — flat, hairline-bordered, one tone above its background.",
+      "html": "<div class=\"ds-card\"><strong>HighLevel</strong><span>Not connected</span></div>",
+      "css": ".ds-card { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid #34332d; border-radius: 9px; background: #171714; } .ds-card strong { font: 500 12px Geist, sans-serif; color: #eeeae0; } .ds-card span { font: 11px Geist, sans-serif; color: #8c8980; }"
+    },
+    {
+      "name": "Panel Heading Label",
+      "kind": "custom",
+      "refersTo": "label",
+      "description": "Uppercase monospace micro-label marking a panel's identity — the system's structural-vs-content signal.",
+      "html": "<span class=\"ds-label\">Chat</span>",
+      "css": ".ds-label { display: inline-block; color: #8c8980; font: 600 10px/1.4 'IBM Plex Mono', ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Workshop Bench",
+    "overview": "Genesis looks like a tool-maker's bench, not a marketing surface: dark and unfussy, every panel earns its place, and the one warm accent color marks what's active or worth touching — the way a marked tool stands out on a dark workbench. There is exactly one theme (always dark; no light mode, no toggle) because the product is a working console, not a brand showcase. Chrome recedes — hairline borders, stepped near-black surfaces, uppercase monospace micro-labels — so the three things that actually matter (chat, code, live preview) can sit side by side without competing for attention.\n\nThe system rejects: light backgrounds, decorative gradients or illustration, multiple accent colors, drop shadows as a default depth device, and centered/marketing-style page compositions anywhere inside the authenticated app.",
+    "keyCharacteristics": [
+      "Always-dark, single-theme — depth from tonal steps, not shadows",
+      "One accent (Signal Amber) used only for what's active, primary, or needs attention",
+      "Dense, monospace micro-labels doing structural/status work (IBM Plex Mono, uppercase, wide tracking)",
+      "Geist for everything a human reads at length; monospace for everything a human scans",
+      "Compact controls (28–40px control heights, 5–9px radii) — instrumentation, not billboard"
+    ],
+    "rules": [
+      { "name": "The One Accent Rule", "body": "Signal Amber is the only saturated color in the interface. Every other surface is a shade of near-black; every other piece of feedback (error, muted, disabled) uses desaturated tones. If a screen needs a second \"important\" color, that is a sign the hierarchy is wrong, not that the palette needs a second accent.", "section": "colors" },
+      { "name": "The Mono-Means-Structure Rule", "body": "If text is naming where you are or what state something is in (a panel heading, a tab, a status badge, a timestamp) it is uppercase IBM Plex Mono. If it is content a human wrote or is reading (chat prose, dialog descriptions, form labels-as-sentences) it is Geist.", "section": "typography" },
+      { "name": "The Flat-By-Default Rule", "body": "A panel, card, or row is flat at rest. Reach for a shadow only for a true overlay (modal, sheet, popover) — never to add visual weight to something that sits in normal document flow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep Signal Amber (#e8bd62) as the only saturated color anywhere in the authenticated app.",
+      "Do build depth from the three-step near-black tonal ladder (#11110f → #161613 → #1d1c18) plus hairline borders before reaching for a shadow.",
+      "Do set structural/status text (panel labels, tabs, badges, timestamps) in uppercase IBM Plex Mono; keep everything a human composes or reads at length in Geist.",
+      "Do keep controls compact (28–40px heights, 5–9px radii) — this is an instrument panel, not a marketing page."
+    ],
+    "donts": [
+      "Don't introduce a light theme or a theme toggle — Genesis is deliberately always dark.",
+      "Don't add a second accent hue; a new \"important\" color signals a hierarchy problem, not a palette gap.",
+      "Don't apply drop shadows to panels, cards, or rows that sit in normal document flow — reserve shadows for true overlays (dialog, sheet, popover).",
+      "Don't carry the dense workspace grid's tight spacing into the editorial auth/dashboard pages, or vice versa — the two layout registers are intentionally different."
+    ]
+  }
+}

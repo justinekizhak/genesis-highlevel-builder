@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-09-12T10:48:57.312Z",
         "reason": "false positive: text-stone-950 (#0c0a09, near-black) on bg-amber-300 is a deliberate high-contrast dark-on-light pairing, not washed-out gray text on a saturated background"
+      },
+      {
+        "rule": "overused-font",
+        "value": "*",
+        "files": [
+          "frontend/src/styles.css"
+        ],
+        "createdAt": "2026-09-12T12:53:41.130Z",
+        "reason": "Deliberate product decision: components.json pins \"font\": \"geist-sans\" and DESIGN.md documents Geist as the committed display/body face — not incidental AI-slop drift."
       }
     ]
   }
