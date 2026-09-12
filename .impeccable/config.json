@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "frontend/src/components/ui/Button.vue"
+        ],
+        "createdAt": "2026-09-12T10:48:57.312Z",
+        "reason": "false positive: text-stone-950 (#0c0a09, near-black) on bg-amber-300 is a deliberate high-contrast dark-on-light pairing, not washed-out gray text on a saturated background"
+      }
+    ]
+  }
+}

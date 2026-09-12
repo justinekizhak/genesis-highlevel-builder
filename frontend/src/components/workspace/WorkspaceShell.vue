@@ -21,13 +21,13 @@ import {
   IconSend,
   IconSparkles,
 } from '@tabler/icons-vue'
-import Badge from '@/components/ui/Badge.vue'
-import Button from '@/components/ui/Button.vue'
-import Textarea from '@/components/ui/Textarea.vue'
-import Input from '@/components/ui/Input.vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Sheet, SheetClose, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -526,7 +526,7 @@ function openPreviewInNewTab() {
           aria-label="Show issue details"
           @click="attentionOpen = true"
         >{{ statusLabel }}</button>
-        <Badge v-else :class="isGenerating ? 'status-badge active' : 'status-badge'">{{ statusLabel }}</Badge>
+        <Badge v-else variant="secondary" :class="isGenerating ? 'status-badge active' : 'status-badge'">{{ statusLabel }}</Badge>
         <Button v-if="generationDiffs.length" variant="ghost" size="sm" @click="diffOpen = true">
           <IconFileDiff :size="16" />Changes
         </Button>
@@ -560,7 +560,6 @@ function openPreviewInNewTab() {
         ><IconMessage :size="17" /></Button>
         <div class="panel-heading">
           <div>
-            <span class="heading-label">Conversation</span>
             <h1>Build with HighLevel</h1>
           </div>
           <Button variant="ghost" size="icon" aria-label="Collapse conversation" title="Collapse conversation" @click="chatCollapsed = true">
@@ -738,15 +737,12 @@ function openPreviewInNewTab() {
     </section>
 
     <Sheet v-model:open="snapshotOpen">
-        <SheetContent aria-describedby="snapshot-description">
+        <SheetContent class="snapshot-dialog" aria-describedby="snapshot-description">
         <div class="dialog-heading">
           <div>
             <SheetTitle id="snapshot-title">Snapshot history</SheetTitle>
             <SheetDescription id="snapshot-description">Every generation and manual edit can be restored.</SheetDescription>
           </div>
-          <SheetClose as-child>
-            <Button variant="ghost" size="icon" aria-label="Close snapshot history">×</Button>
-          </SheetClose>
         </div>
         <p v-if="snapshotLoading" class="snapshot-empty">Loading snapshots…</p>
         <p v-else-if="snapshotError" class="form-error" role="alert">{{ snapshotError }}</p>
@@ -757,7 +753,7 @@ function openPreviewInNewTab() {
               <div class="snapshot-meta">
                 <strong>{{ new Date(snapshot.createdAt).toLocaleString() }}</strong>
                 <Badge v-if="snapshot.id === currentSnapshotId">Current</Badge>
-                <Badge v-else>{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.kind === 'manual' ? 'Manual edit' : snapshot.provider }}</Badge>
+                <Badge v-else variant="secondary">{{ snapshot.kind === 'partial' ? 'Partial' : snapshot.kind === 'backup' ? 'Backup' : snapshot.kind === 'manual' ? 'Manual edit' : snapshot.provider }}</Badge>
               </div>
               <p v-if="snapshot.prompt"><strong>Request:</strong> {{ snapshot.prompt }}</p>
               <p v-if="snapshot.summary"><strong>Result:</strong> {{ snapshot.summary }}</p>
@@ -777,13 +773,12 @@ function openPreviewInNewTab() {
     </Sheet>
 
     <Sheet v-model:open="attentionOpen">
-      <SheetContent aria-describedby="attention-description">
+      <SheetContent class="snapshot-dialog" aria-describedby="attention-description">
         <div class="dialog-heading">
           <div>
             <SheetTitle>Workspace needs attention</SheetTitle>
             <SheetDescription id="attention-description">Details from the latest failed operation.</SheetDescription>
           </div>
-          <SheetClose as-child><Button variant="ghost" size="icon" aria-label="Close issue details">×</Button></SheetClose>
         </div>
         <div class="attention-detail" role="alert">
           <strong>What happened</strong>
@@ -796,14 +791,13 @@ function openPreviewInNewTab() {
     </Sheet>
 
     <Dialog v-model:open="projectEditorOpen">
-      <DialogContent aria-describedby="rename-project-description">
+      <DialogContent class="project-dialog" aria-describedby="rename-project-description">
         <form @submit.prevent="saveProjectName">
           <div class="dialog-heading">
             <div>
               <DialogTitle>Rename project</DialogTitle>
               <DialogDescription id="rename-project-description">Change the name shown in the workspace and project list.</DialogDescription>
             </div>
-            <DialogClose as-child><Button type="button" variant="ghost" size="icon" aria-label="Close rename dialog">×</Button></DialogClose>
           </div>
           <label for="workspace-project-name">Project name</label>
           <Input id="workspace-project-name" v-model="projectName" required autofocus />
@@ -817,13 +811,12 @@ function openPreviewInNewTab() {
     </Dialog>
 
     <Sheet v-model:open="diffOpen">
-      <SheetContent class="diff-dialog" aria-describedby="diff-description">
+      <SheetContent class="snapshot-dialog sm:max-w-2xl" aria-describedby="diff-description">
         <div class="dialog-heading">
           <div>
             <SheetTitle>Generation changes</SheetTitle>
             <SheetDescription id="diff-description">Line changes from the files that existed before the latest generation.</SheetDescription>
           </div>
-          <SheetClose as-child><Button variant="ghost" size="icon" aria-label="Close generation changes">×</Button></SheetClose>
         </div>
         <p v-if="!generationDiffs.length" class="snapshot-empty">Generate a revision to see its changes.</p>
         <div v-else class="diff-files">
@@ -836,7 +829,7 @@ function openPreviewInNewTab() {
     </Sheet>
 
     <AlertDialog :open="Boolean(pendingWriteRequest)" @update:open="(open) => { if (!open) cancelHighLevelWrite() }">
-      <AlertDialogContent aria-describedby="highlevel-write-description">
+      <AlertDialogContent class="alert-dialog" aria-describedby="highlevel-write-description">
         <AlertDialogTitle>Confirm HighLevel change</AlertDialogTitle>
         <AlertDialogDescription id="highlevel-write-description">
           This generated app wants to {{ writeConfirmationLabel }}. This changes data in the connected location and cannot be simulated in the preview.

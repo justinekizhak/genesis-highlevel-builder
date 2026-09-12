@@ -1,6 +1,6 @@
 # Genesis
 
-AI-powered HighLevel app builder built with Vue 3, TypeScript, repo-owned shadcn-vue components, Monaco, and Firebase.
+AI-powered HighLevel app builder built with Vue 3, TypeScript, shadcn-vue (official CLI-generated components in `frontend/components.json` + `frontend/src/components/ui/`, on reka-ui), Monaco, and Firebase.
 
 Describe an app in plain English, connect a real HighLevel location, and Genesis streams a working Vue mini-app —
 token by token — into a Monaco editor. The live preview runs that app in a hard-sandboxed iframe against **your real

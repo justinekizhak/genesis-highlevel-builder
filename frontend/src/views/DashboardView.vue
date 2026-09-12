@@ -8,17 +8,17 @@ import {
   IconChevronRight,
   IconCpu,
   IconEdit,
+  IconFolderPlus,
   IconLogout,
   IconPlus,
   IconPlugConnected,
   IconPlugConnectedX,
   IconTrash,
-  IconX,
 } from '@tabler/icons-vue'
-import Badge from '@/components/ui/Badge.vue'
-import Button from '@/components/ui/Button.vue'
-import Input from '@/components/ui/Input.vue'
-import Textarea from '@/components/ui/Textarea.vue'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import {
   AlertDialog,
@@ -131,7 +131,6 @@ async function signOut() {
     <div class="dashboard-content">
       <section class="dashboard-intro" data-enter>
         <div>
-          <p>Projects</p>
           <h1>What are we building?</h1>
           <span>Create a workspace, describe the outcome, and review every generated file.</span>
         </div>
@@ -167,13 +166,13 @@ async function signOut() {
               <span>{{ highLevel.llm.configured ? 'OpenAI structured generation is ready.' : 'Set the Firebase OPENAI_API_KEY secret to enable live generation.' }}</span>
             </div>
           </div>
-          <Badge>{{ highLevel.llm.configured ? 'Ready' : 'Not configured' }}</Badge>
+          <Badge variant="secondary">{{ highLevel.llm.configured ? 'Ready' : 'Not configured' }}</Badge>
         </section>
       </div>
       <p v-if="highLevel.error" class="form-error connection-error">{{ highLevel.error }}</p>
 
       <section class="project-section" data-enter>
-        <div class="project-section-heading"><h2>Your workspaces</h2><Badge>{{ projectsStore.projects.length }} projects</Badge></div>
+        <div class="project-section-heading"><h2>Your workspaces</h2><Badge variant="secondary">{{ projectsStore.projects.length }} projects</Badge></div>
         <p v-if="projectsStore.error" class="form-error">{{ projectsStore.error }}</p>
         <p v-if="mutationError && !createOpen" class="form-error project-error" role="alert">{{ mutationError }}</p>
         <div v-if="projectsLoading" class="project-loading"><span /><span /><span /></div>
@@ -191,14 +190,18 @@ async function signOut() {
             </div>
           </article>
         </TransitionGroup>
-        <div v-else class="project-empty"><h3>No projects yet</h3><p>Create the first workspace and generate a HighLevel interface.</p></div>
+        <div v-else class="project-empty">
+          <IconFolderPlus :size="26" />
+          <h3>No projects yet</h3>
+          <p>Create the first workspace and generate a HighLevel interface.</p>
+        </div>
       </section>
     </div>
 
     <Dialog v-model:open="createOpen">
-      <DialogContent aria-describedby="project-editor-description">
+      <DialogContent class="project-dialog" aria-describedby="project-editor-description">
       <form @submit.prevent="saveProject">
-        <div class="dialog-heading"><div><DialogTitle>{{ editingProject ? 'Edit project' : 'New project' }}</DialogTitle><DialogDescription id="project-editor-description">Name the outcome, not the implementation.</DialogDescription></div><DialogClose as-child><Button type="button" variant="ghost" size="icon" aria-label="Close dialog"><IconX :size="17" /></Button></DialogClose></div>
+        <div class="dialog-heading"><div><DialogTitle>{{ editingProject ? 'Edit project' : 'New project' }}</DialogTitle><DialogDescription id="project-editor-description">Name the outcome, not the implementation.</DialogDescription></div></div>
         <label for="project-name">Project name</label>
         <Input id="project-name" v-model="name" required placeholder="Contact intelligence" />
         <label for="project-description">Description</label>
@@ -210,7 +213,7 @@ async function signOut() {
     </Dialog>
 
     <AlertDialog :open="Boolean(deleteTarget)" @update:open="(open) => { if (!open) deleteTarget = undefined }">
-      <AlertDialogContent aria-describedby="delete-project-description">
+      <AlertDialogContent class="alert-dialog" aria-describedby="delete-project-description">
         <AlertDialogTitle>Delete {{ deleteTarget?.name }}?</AlertDialogTitle>
         <AlertDialogDescription id="delete-project-description">This soft-deletes the project and removes it from your dashboard. Its stored data is retained.</AlertDialogDescription>
         <div class="dialog-actions">

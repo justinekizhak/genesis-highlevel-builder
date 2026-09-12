@@ -2,8 +2,8 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { IconArrowRight, IconBraces, IconShieldLock } from '@tabler/icons-vue'
-import Button from '@/components/ui/Button.vue'
-import Input from '@/components/ui/Input.vue'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { getAuthErrorMessage } from '@/lib/auth-error'
 import { useAuthStore } from '@/stores/auth'
 
@@ -40,11 +40,10 @@ async function submit() {
     <section class="auth-context">
       <div class="auth-brand"><span><IconBraces :size="20" /></span><strong>Genesis</strong></div>
       <div class="auth-copy">
-        <p>HighLevel app builder</p>
-        <h1>Turn CRM ideas into working interfaces.</h1>
-        <span>Generate focused applications that read real contacts, conversations, and calendars through a secure gateway.</span>
+        <h1>Describe an app. Get one wired to your real HighLevel data.</h1>
+        <span>Genesis turns a plain-English prompt into a working web app — a contact list, an inbox, a booking view — connected to your actual contacts, conversations, and calendar in HighLevel. Never sample data, never a mockup.</span>
       </div>
-      <div class="auth-security"><IconShieldLock :size="18" /><span>HighLevel tokens stay server-side. Generated code receives no credentials.</span></div>
+      <div class="auth-security"><IconShieldLock :size="18" /><span>Your HighLevel connection stays on our server. The app Genesis generates never sees your login or API keys.</span></div>
     </section>
 
     <section class="auth-form-panel">
