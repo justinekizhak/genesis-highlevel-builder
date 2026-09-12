@@ -14,6 +14,7 @@ import {
   IconFileCode,
   IconHistory,
   IconLayoutSidebarLeftCollapse,
+  IconLoader2,
   IconMessage,
   IconPlayerStop,
   IconPlus,
@@ -76,6 +77,7 @@ const messages = ref<ChatMessage[]>([
   },
 ])
 const prompt = ref('')
+const isLoadingProject = ref(true)
 const isGenerating = ref(false)
 const generationError = ref('')
 const previewDocument = ref(buildSrcdoc(files.value))
@@ -319,6 +321,8 @@ onMounted(async () => {
     if (state?.messages?.length) messages.value = state.messages
   } catch (error) {
     generationError.value = error instanceof Error ? error.message : 'Could not load this project.'
+  } finally {
+    isLoadingProject.value = false
   }
   await nextTick()
   workspaceAnimation = await animateEntrance(workspaceRoot.value?.querySelectorAll('.panel') ?? [], { y: { from: 8 }, delay: 0 })
@@ -602,7 +606,7 @@ function openPreviewInNewTab() {
             aria-label="Describe the HighLevel app to generate"
             placeholder="Build a contact dashboard with search..."
             :disabled="isGenerating || !highLevelStore.connection.connected"
-            @submit="submitPrompt()"
+            @keydown.enter.exact.prevent="submitPrompt()"
           />
           <div class="composer-footer">
             <span>Enter to send, Shift + Enter for a new line</span>
@@ -650,7 +654,8 @@ function openPreviewInNewTab() {
               <IconFileCode :size="15" />
               <span>{{ file.path }}</span>
             </button>
-            <p v-if="!fileList.length" class="tree-empty">Waiting for the first file...</p>
+            <p v-if="isLoadingProject" class="tree-empty">Loading files...</p>
+            <p v-else-if="!fileList.length" class="tree-empty">Waiting for the first file...</p>
           </nav>
           <div class="editor-wrap">
             <Tabs v-if="activeFile" v-model="activePath" class="editor-tabs-root">
@@ -679,6 +684,10 @@ function openPreviewInNewTab() {
               }"
               @update:value="updateActiveFile"
             />
+            <div v-else-if="isLoadingProject" class="editor-empty" role="status" aria-label="Loading project files">
+              <IconLoader2 :size="30" class="spin" />
+              <p>Loading initial files...</p>
+            </div>
             <div v-else class="editor-empty"><IconCode :size="30" /><p>Generated files will appear here.</p></div>
           </div>
         </div>
