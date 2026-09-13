@@ -877,6 +877,7 @@ button { touch-action: manipulation; }
 .message.user > span { color: #d2ad59; }
 .message-markdown code { border: 1px solid #31322d; border-radius: 6px; background: #1c1d19; color: #e2c37c; }
 .message-markdown pre { padding: 12px 14px; border-color: #30312c; border-radius: 10px; background: #0f100e; }
+.message-usage { display: block; margin-top: 7px; color: #6f7069; font: 500 10.5px/1.4 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .02em; cursor: default; }
 .generation-progress { margin: 2px 0 18px; padding: 10px 12px; border: 1px solid #4b422c; border-radius: 10px; background: #211d14; }
 .error-message,
 .stopped-notice { padding: 11px 12px; border-radius: 10px; line-height: 1.5; }

@@ -222,6 +222,7 @@ export async function generateWithOpenAi(
   onDelta?: (delta: string) => void,
   context?: GenerationContext,
   model: string = openAiModel.value(),
+  onUsage?: (usage: { inputTokens: number; outputTokens: number; totalTokens: number }) => void,
 ): Promise<GeneratedApplication> {
   const apiKey = openAiApiKey.value()
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.')
@@ -263,6 +264,10 @@ export async function generateWithOpenAi(
     }
     if (event.type === 'error' || event.type === 'response.failed') {
       throw new Error(friendlyOpenAiError(undefined, errorEventDetail(event)))
+    }
+    if (event.type === 'response.completed' && event.response.usage) {
+      const usage = event.response.usage
+      onUsage?.({ inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens })
     }
   }
   if (!text) throw new Error('The model returned no application output.')

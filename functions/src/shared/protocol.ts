@@ -5,6 +5,7 @@ export type GenerationEvent =
   | { type: 'file_delta'; path: string; delta: string }
   | { type: 'file_complete'; path: string; size: number; sha256: string }
   | { type: 'snapshot_created'; snapshotId: string }
+  | { type: 'usage'; inputTokens: number; outputTokens: number; totalTokens: number }
   | { type: 'complete'; generationId: string }
   | { type: 'error'; code: string; message: string; recoverable: boolean }
 

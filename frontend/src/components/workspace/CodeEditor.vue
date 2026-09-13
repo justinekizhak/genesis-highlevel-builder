@@ -7,9 +7,11 @@ import { getOrCreateModel } from '@/lib/models'
 const props = defineProps<{
   path: string
   readOnly: boolean
-  /** Bumped by the parent on every streamed delta, so the view can follow the write position. */
+  /** Bumped by the parent on every streamed delta and applied edit, so the view can follow along. */
   followTick: number
   streamingPath?: string
+  /** Where a set of line edits just landed, for files revised rather than written start to finish. */
+  editTarget?: { path: string; line: number }
 }>()
 const emit = defineEmits<{ change: [content: string] }>()
 
@@ -18,7 +20,13 @@ let editor: monaco.editor.IStandaloneCodeEditor | undefined
 let editCaret: monaco.editor.IEditorDecorationsCollection | undefined
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-const revealWritePosition = useThrottleFn((lineNumber: number) => editor?.revealLine(lineNumber), 100)
+// Immediate, not the default: with `smoothScrolling` enabled Monaco routes a smooth reveal through
+// an animation that never runs for programmatic calls, so the scroll is silently dropped. The
+// option still applies to the reader's own scrolling.
+const revealWritePosition = useThrottleFn(
+  (lineNumber: number) => editor?.revealLine(lineNumber, monaco.editor.ScrollType.Immediate),
+  100,
+)
 
 function syncModel() {
   if (!editor) return
@@ -75,8 +83,17 @@ function writePosition(model: monaco.editor.ITextModel) {
 
 watch(() => props.followTick, () => {
   const model = editor?.getModel()
-  if (!model || props.streamingPath !== props.path) return
-  const { lineNumber, column } = writePosition(model)
+  if (!model) return
+  let lineNumber: number
+  let column: number
+  if (props.streamingPath === props.path) {
+    ({ lineNumber, column } = writePosition(model))
+  } else if (props.editTarget?.path === props.path) {
+    lineNumber = Math.min(props.editTarget.line, model.getLineCount())
+    column = model.getLineMaxColumn(lineNumber)
+  } else {
+    return
+  }
   // A decoration rather than the editor's own cursor: Monaco hides that one whenever the editor
   // lacks focus, and focus stays in the chat composer while a generation runs.
   editCaret?.set([{

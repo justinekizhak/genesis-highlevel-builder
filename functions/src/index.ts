@@ -205,7 +205,9 @@ export const generateApp = onRequest(
           for (const event of streamParser.push(delta)) {
             if (!response.destroyed) response.write(serializeSse(event))
           }
-        }, generationContext, generationModel)
+        }, generationContext, generationModel, (usage) => {
+          if (!response.destroyed) response.write(serializeSse({ type: 'usage', ...usage }))
+        })
         validateGeneratedApplication(application)
         const built = buildApplicationEvents(application, 160, { generationId })
         await persistGeneration({

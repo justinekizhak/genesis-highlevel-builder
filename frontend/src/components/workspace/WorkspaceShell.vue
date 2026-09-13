@@ -43,7 +43,8 @@ import { buildProjectArchive, projectArchiveFilename } from '@/lib/project-archi
 import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
 import { useTypewriter } from '@/composables/typewriter'
-import { appendToModel, disposeAllModels, getOrCreateModel, setModelValue } from '@/lib/models'
+import { appendToModel, applyContentEdits, disposeAllModels, getOrCreateModel, setModelValue } from '@/lib/models'
+import { streamingContent } from '@/lib/model-edits'
 import CodeEditor from '@/components/workspace/CodeEditor.vue'
 import DiffFileList from '@/components/workspace/DiffFileList.vue'
 import CommandPalette from '@/components/workspace/CommandPalette.vue'
@@ -95,6 +96,11 @@ const messageTypewriter = useTypewriter()
 const typingMessageId = ref<string>()
 const streamingFilePath = ref<string>()
 const followTick = ref(0)
+/** Where the last set of line edits landed, so the editor can scroll it into view. */
+const editTarget = ref<{ path: string; line: number }>()
+/** In-flight re-streams of files that already have content, reconciled as their lines arrive. */
+type EditStream = { baseline: string; received: string }
+const editStreams = new Map<string, EditStream>()
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -607,6 +613,21 @@ function renderedMessageHtml(message: ChatMessage) {
   return renderChatMarkdown(messageText(message))
 }
 
+function formatTokenCount(value: number) {
+  return value >= 1000 ? `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k` : String(value)
+}
+
+/**
+ * Reconciles how much of a re-streamed file has arrived against the version already on screen, and
+ * applies the difference. Lines the stream has not reached stay exactly where they are.
+ */
+function applyEditProgress(path: string, edit: EditStream) {
+  const line = applyContentEdits(path, streamingContent(edit.baseline, edit.received))
+  if (line === undefined) return
+  editTarget.value = { path, line }
+  followTick.value += 1
+}
+
 function handleEvent(event: GenerationEvent) {
   switch (event.type) {
     case 'generation_started':
@@ -628,16 +649,31 @@ function handleEvent(event: GenerationEvent) {
       break
     }
     case 'file_start': {
-      files.value[event.path] = { path: event.path, language: event.language, content: '' }
-      streamingFilePath.value = event.path
-      getOrCreateModel(event.path, '', event.language)
-      setModelValue(event.path, '')
+      // The generator re-streams a whole file when it edits one. Blanking the model and retyping it
+      // would throw the reader out of a file they can already see, so an edit to existing content
+      // is reconciled against the original as it arrives, touching only the lines that change.
+      const existingContent = files.value[event.path]?.content ?? ''
+      if (existingContent) {
+        editStreams.set(event.path, { baseline: existingContent, received: '' })
+      } else {
+        files.value[event.path] = { path: event.path, language: event.language, content: '' }
+        streamingFilePath.value = event.path
+        getOrCreateModel(event.path, '', event.language)
+        setModelValue(event.path, '')
+      }
       openFile(event.path)
       mobilePanel.value = 'code'
       if (!filesTouchedThisGeneration.value.includes(event.path)) filesTouchedThisGeneration.value.push(event.path)
       break
     }
     case 'file_delta': {
+      const edit = editStreams.get(event.path)
+      if (edit) {
+        edit.received += event.delta
+        // Only whole lines can be reconciled, so there is nothing new to show until one arrives.
+        if (event.delta.includes('\n')) applyEditProgress(event.path, edit)
+        break
+      }
       const file = files.value[event.path]
       if (file) {
         files.value[event.path] = { ...file, content: file.content + event.delta }
@@ -647,6 +683,21 @@ function handleEvent(event: GenerationEvent) {
       break
     }
     case 'file_complete': {
+      const edit = editStreams.get(event.path)
+      if (edit) {
+        editStreams.delete(event.path)
+        if (edit.received.length !== event.size) {
+          generationError.value = `The stream for ${event.path} ended unexpectedly. Partial output has been preserved.`
+        }
+        const file = files.value[event.path]
+        if (file) files.value[event.path] = { ...file, content: edit.received }
+        const line = applyContentEdits(event.path, edit.received)
+        if (line !== undefined) {
+          editTarget.value = { path: event.path, line }
+          followTick.value += 1
+        }
+        break
+      }
       const file = files.value[event.path]
       if (!file || file.content.length !== event.size) {
         generationError.value = `The stream for ${event.path} ended unexpectedly. Partial output has been preserved.`
@@ -658,6 +709,11 @@ function handleEvent(event: GenerationEvent) {
       currentSnapshotId.value = event.snapshotId
       queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
       break
+    case 'usage': {
+      const message = messages.value.find((candidate) => candidate.id === currentGenerationId.value)
+      if (message) message.usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens, totalTokens: event.totalTokens }
+      break
+    }
     case 'complete':
       generationDiffs.value = filesBeforeGeneration ? buildGenerationDiff(filesBeforeGeneration, files.value) : []
       lastGenerationBefore.value = filesBeforeGeneration
@@ -674,6 +730,7 @@ function handleEvent(event: GenerationEvent) {
       messageTypewriter.finish()
       typingMessageId.value = undefined
       streamingFilePath.value = undefined
+      editStreams.clear()
       break
   }
 }
@@ -693,6 +750,8 @@ async function submitPrompt(suggestion?: string) {
   filesTouchedThisGeneration.value = []
   showInlineDiff.value = false
   streamingFilePath.value = undefined
+  editTarget.value = undefined
+  editStreams.clear()
   isGenerating.value = true
   messages.value.push({ id: crypto.randomUUID(), role: 'user', content: value })
   filesBeforeGeneration = cloneFiles(files.value)
@@ -737,6 +796,7 @@ async function stopGeneration() {
   messageTypewriter.finish()
   typingMessageId.value = undefined
   streamingFilePath.value = undefined
+  editStreams.clear()
   stoppedNotice.value = 'Stopping generation… Partial output will stay in the editor.'
   if (!generationId) {
     activeController.abort()
@@ -920,6 +980,9 @@ const { list: shortcutsList } = useShortcuts([
               v-html="renderedMessageHtml(message)"
             />
             <p v-else>{{ messageText(message) }}<i v-if="isMessageTyping(message)" class="typing-cursor" /></p>
+            <span v-if="message.usage" class="message-usage" :title="`${message.usage.inputTokens.toLocaleString()} input tokens, ${message.usage.outputTokens.toLocaleString()} output tokens`">
+              {{ formatTokenCount(message.usage.inputTokens) }} in · {{ formatTokenCount(message.usage.outputTokens) }} out
+            </span>
           </article>
 
           <div v-if="isGenerating" class="generation-progress">
@@ -1074,6 +1137,7 @@ const { list: shortcutsList } = useShortcuts([
               :read-only="isGenerating"
               :follow-tick="followTick"
               :streaming-path="streamingFilePath"
+              :edit-target="editTarget"
               @change="updateActiveFile"
             />
             <div v-else-if="isLoadingProject" class="editor-empty code-empty-state is-loading" role="status" aria-label="Loading project files">
