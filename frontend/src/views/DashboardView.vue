@@ -6,7 +6,6 @@ import {
   IconArrowUpRight,
   IconBraces,
   IconChevronRight,
-  IconCpu,
   IconEdit,
   IconFolderPlus,
   IconLogout,
