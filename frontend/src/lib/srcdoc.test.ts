@@ -20,6 +20,23 @@ describe('buildSrcdoc', () => {
     expect(result).not.toContain('genesis.highlevel.v1')
   })
 
+  it('strips stray <link>/<script src> references to the already-inlined files', () => {
+    const result = buildSrcdoc({
+      'index.html': {
+        path: 'index.html',
+        content:
+          '<link rel="stylesheet" href="styles.css"><div id="app"></div><script src="app.js"></script>',
+        language: 'html',
+      },
+      'styles.css': { path: 'styles.css', content: 'main{color:red}', language: 'css' },
+      'app.js': { path: 'app.js', content: 'console.log("ready")', language: 'javascript' },
+    })
+
+    expect(result).not.toContain('href="styles.css"')
+    expect(result).not.toContain('src="app.js"')
+    expect(result).toContain('<div id="app"></div>')
+  })
+
   it('keeps the generated app dark when its token rule is malformed', () => {
     const result = buildSrcdoc({
       'index.html': { path: 'index.html', content: '<main>Hello</main>', language: 'html' },

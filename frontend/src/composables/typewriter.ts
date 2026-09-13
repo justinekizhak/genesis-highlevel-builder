@@ -30,13 +30,18 @@ export function useTypewriter() {
     frame = requestAnimationFrame(tick)
   }
 
-  function start(getText: () => string) {
-    textGetter = getText
+  function wake() {
+    if (!textGetter) return
     if (!motionAllowed()) {
-      revealedLength.value = getText().length
+      revealedLength.value = textGetter().length
       return
     }
     if (frame === undefined) frame = requestAnimationFrame(tick)
+  }
+
+  function start(getText: () => string) {
+    textGetter = getText
+    wake()
   }
 
   function reset() {
@@ -53,5 +58,5 @@ export function useTypewriter() {
     textGetter = undefined
   }
 
-  return { revealedLength, start, reset, finish }
+  return { revealedLength, start, wake, reset, finish }
 }

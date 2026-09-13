@@ -31,6 +31,21 @@ export function createDiffReveal(before: string, after: string) {
     return stepIndex >= steps.length
   }
 
+  /** 1-indexed {line, column} of the current reveal cursor, so the editor can plant a real caret there and follow it. */
+  function currentPosition() {
+    let line = 1
+    let column = 1
+    for (let i = 0; i < prefix.length; i += 1) {
+      if (prefix.charCodeAt(i) === 10) {
+        line += 1
+        column = 1
+      } else {
+        column += 1
+      }
+    }
+    return { line, column }
+  }
+
   /** Advances by up to `addedCharBudget` newly-revealed added characters; free steps cost nothing. */
   function tick(addedCharBudget: number): string {
     let budget = addedCharBudget
@@ -63,5 +78,5 @@ export function createDiffReveal(before: string, after: string) {
     return prefix + remainder
   }
 
-  return { tick, isDone, addedTotal, finalText: after }
+  return { tick, isDone, addedTotal, finalText: after, currentPosition }
 }

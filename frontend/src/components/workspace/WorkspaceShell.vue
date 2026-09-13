@@ -38,13 +38,13 @@ import { renderChatMarkdown } from '@/lib/markdown'
 import { requireFirestore } from '@/services/firebase'
 import { hlEventLabel } from '@/lib/highlevel-events'
 import { buildSrcdoc } from '@/lib/srcdoc'
-import { buildGenerationDiff, firstChangedLine, type GenerationFileDiff } from '@/lib/generation-diff'
+import { buildGenerationDiff, type GenerationFileDiff } from '@/lib/generation-diff'
 import { buildProjectArchive, projectArchiveFilename } from '@/lib/project-archive'
 import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
 import { useTypewriter } from '@/composables/typewriter'
-import { useTextPacer } from '@/composables/textPacer'
-import { useDiffReveal } from '@/composables/useDiffReveal'
+import { appendToModel, disposeAllModels, getOrCreateModel, setModelValue } from '@/lib/models'
+import CodeEditor from '@/components/workspace/CodeEditor.vue'
 import DiffFileList from '@/components/workspace/DiffFileList.vue'
 import CommandPalette from '@/components/workspace/CommandPalette.vue'
 import ShortcutsDialog from '@/components/workspace/ShortcutsDialog.vue'
@@ -82,10 +82,6 @@ const projectsStore = useProjectsStore()
 const authStore = useAuthStore()
 const highLevelStore = useHighLevelStore()
 useIntegrationStatusQuery()
-const MonacoEditor = defineAsyncComponent({
-  loader: () => import('@guolao/vue-monaco-editor').then((module) => module.VueMonacoEditor),
-  loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
-})
 const MonacoDiffEditor = defineAsyncComponent({
   loader: () => import('@guolao/vue-monaco-editor').then((module) => module.VueMonacoDiffEditor),
   loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
@@ -97,8 +93,8 @@ const activePath = ref('')
 const openTabs = ref<string[]>([])
 const messageTypewriter = useTypewriter()
 const typingMessageId = ref<string>()
-const fileTypewriter = useTextPacer()
 const streamingFilePath = ref<string>()
+const followTick = ref(0)
 const messages = ref<ChatMessage[]>([
   {
     id: 'welcome',
@@ -171,24 +167,15 @@ const hasOpenOverlay = computed(() => (
 ))
 let controller: AbortController | undefined
 let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
-const refinementPaths = new Set<string>()
-const refinementBuffers = new Map<string, string>()
-const diffReveals = new Map<string, ReturnType<typeof useDiffReveal>>()
 let saveTimer: number | undefined
 let savedIndicatorTimer: number | undefined
 let cancelFallbackTimer: number | undefined
 const bridgeRequests = new Set<string>()
 let workspaceAnimation: { cancel?: () => void } | undefined
-let codeEditor: { revealLineInCenter: (lineNumber: number) => void } | undefined
 
 const activeFile = computed(() => files.value[activePath.value])
 const fileList = computed(() => Object.values(files.value))
 const activeFileDiff = computed(() => generationDiffs.value.find((file) => file.path === activePath.value))
-const activeFileDisplayContent = computed(() => {
-  if (!activeFile.value) return ''
-  if (streamingFilePath.value !== activePath.value) return activeFile.value.content
-  return activeFile.value.content.slice(0, fileTypewriter.revealedLength.value)
-})
 const statusLabel = computed(() => {
   if (generationError.value) return 'Needs attention'
   if (isStopping.value) return 'Stopping'
@@ -329,6 +316,9 @@ function hydrateFiles(source: Record<string, string>) {
     content,
     language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html',
   }]))
+  // The editor renders whatever model the registry holds for a path, so seed them alongside.
+  disposeAllModels()
+  for (const file of Object.values(files.value)) getOrCreateModel(file.path, file.content, file.language)
   const firstPath = Object.keys(files.value)[0] ?? 'app.js'
   activePath.value = firstPath
   openTabs.value = [firstPath]
@@ -338,18 +328,6 @@ function openFile(path: string) {
   if (!openTabs.value.includes(path)) openTabs.value.push(path)
   activePath.value = path
   showInlineDiff.value = !isGenerating.value && generationDiffs.value.some((file) => file.path === path)
-}
-
-function handleEditorMount(editor: { revealLineInCenter: (lineNumber: number) => void }) {
-  codeEditor = editor
-}
-
-function scrollToFirstChange(path: string, before: string, after: string) {
-  const line = firstChangedLine(before, after)
-  if (line === undefined || activePath.value !== path) return
-  nextTick(() => {
-    if (activePath.value === path) codeEditor?.revealLineInCenter(line)
-  })
 }
 
 function parseBridgeRequest(data: Record<string, unknown> | null, sourceId: string, respond: BridgeRequest['respond']) {
@@ -477,7 +455,7 @@ onBeforeUnmount(() => {
   if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
   if (cancelFallbackTimer) window.clearTimeout(cancelFallbackTimer)
   controller?.abort()
-  clearRefinementState()
+  disposeAllModels()
   workspaceAnimation?.cancel?.()
 })
 watch(() => highLevelStore.connection.connected, renderPreview)
@@ -639,6 +617,7 @@ function handleEvent(event: GenerationEvent) {
       const last = messages.value.at(-1)
       if (last?.role === 'assistant' && last.id === currentGenerationId.value) {
         last.content += event.delta
+        messageTypewriter.wake()
       } else {
         const created: ChatMessage = { id: currentGenerationId.value ?? crypto.randomUUID(), role: 'assistant', content: event.delta }
         messages.value.push(created)
@@ -649,60 +628,30 @@ function handleEvent(event: GenerationEvent) {
       break
     }
     case 'file_start': {
-      const existedBefore = Boolean(filesBeforeGeneration?.[event.path]?.content)
-      if (existedBefore) {
-        // Refinement of a file that already has content: keep the old content on screen and
-        // buffer the incoming stream silently, so only the eventual diff animates in, not a
-        // full clear-and-retype of the whole file.
-        refinementPaths.add(event.path)
-        refinementBuffers.set(event.path, '')
-      } else {
-        refinementPaths.delete(event.path)
-        files.value[event.path] = { path: event.path, language: event.language, content: '' }
-        streamingFilePath.value = event.path
-        fileTypewriter.reset()
-        fileTypewriter.start(() => files.value[event.path]?.content ?? '')
-      }
+      files.value[event.path] = { path: event.path, language: event.language, content: '' }
+      streamingFilePath.value = event.path
+      getOrCreateModel(event.path, '', event.language)
+      setModelValue(event.path, '')
       openFile(event.path)
       mobilePanel.value = 'code'
       if (!filesTouchedThisGeneration.value.includes(event.path)) filesTouchedThisGeneration.value.push(event.path)
       break
     }
     case 'file_delta': {
-      if (refinementPaths.has(event.path)) {
-        refinementBuffers.set(event.path, (refinementBuffers.get(event.path) ?? '') + event.delta)
-        break
-      }
       const file = files.value[event.path]
       if (file) {
         files.value[event.path] = { ...file, content: file.content + event.delta }
-        fileTypewriter.wake()
+        appendToModel(event.path, event.delta)
+        followTick.value += 1
       }
       break
     }
     case 'file_complete': {
-      if (refinementPaths.has(event.path)) {
-        const before = filesBeforeGeneration?.[event.path]?.content ?? ''
-        const after = refinementBuffers.get(event.path) ?? ''
-        refinementPaths.delete(event.path)
-        refinementBuffers.delete(event.path)
-        if (after.length !== event.size) {
-          generationError.value = `The stream for ${event.path} ended unexpectedly. Partial output has been preserved.`
-        }
-        const reveal = useDiffReveal()
-        diffReveals.get(event.path)?.stop()
-        diffReveals.set(event.path, reveal)
-        reveal.start(before, after, (text) => {
-          const file = files.value[event.path]
-          if (file) files.value[event.path] = { ...file, content: text }
-        })
-        scrollToFirstChange(event.path, before, after)
-        break
-      }
       const file = files.value[event.path]
       if (!file || file.content.length !== event.size) {
         generationError.value = `The stream for ${event.path} ended unexpectedly. Partial output has been preserved.`
       }
+      if (streamingFilePath.value === event.path) streamingFilePath.value = undefined
       break
     }
     case 'snapshot_created':
@@ -710,7 +659,6 @@ function handleEvent(event: GenerationEvent) {
       queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
       break
     case 'complete':
-      finishRefinementReveals()
       generationDiffs.value = filesBeforeGeneration ? buildGenerationDiff(filesBeforeGeneration, files.value) : []
       lastGenerationBefore.value = filesBeforeGeneration
       showInlineDiff.value = generationDiffs.value.some((file) => file.path === activePath.value)
@@ -719,15 +667,12 @@ function handleEvent(event: GenerationEvent) {
       filesBeforeGeneration = undefined
       messageTypewriter.finish()
       typingMessageId.value = undefined
-      fileTypewriter.finish()
       streamingFilePath.value = undefined
       break
     case 'error':
       if (!(isStopping.value && event.code === 'GENERATION_CANCELLED')) generationError.value = event.message
-      finishRefinementReveals()
       messageTypewriter.finish()
       typingMessageId.value = undefined
-      fileTypewriter.finish()
       streamingFilePath.value = undefined
       break
   }
@@ -747,8 +692,6 @@ async function submitPrompt(suggestion?: string) {
   stoppedNotice.value = ''
   filesTouchedThisGeneration.value = []
   showInlineDiff.value = false
-  clearRefinementState()
-  fileTypewriter.finish()
   streamingFilePath.value = undefined
   isGenerating.value = true
   messages.value.push({ id: crypto.randomUUID(), role: 'user', content: value })
@@ -785,29 +728,14 @@ async function submitPrompt(suggestion?: string) {
   }
 }
 
-function clearRefinementState() {
-  for (const reveal of diffReveals.values()) reveal.stop()
-  diffReveals.clear()
-  refinementPaths.clear()
-  refinementBuffers.clear()
-}
-
-function finishRefinementReveals() {
-  for (const reveal of diffReveals.values()) reveal.finish()
-  diffReveals.clear()
-}
-
 async function stopGeneration() {
   if (!controller || isStopping.value) return
   const activeController = controller
   isStopping.value = true
   const generationId = currentGenerationId.value
   filesBeforeGeneration = undefined
-  finishRefinementReveals()
-  clearRefinementState()
   messageTypewriter.finish()
   typingMessageId.value = undefined
-  fileTypewriter.finish()
   streamingFilePath.value = undefined
   stoppedNotice.value = 'Stopping generation… Partial output will stay in the editor.'
   if (!generationId) {
@@ -1140,24 +1068,13 @@ const { list: shortcutsList } = useShortcuts([
                 renderLineHighlight: 'gutter',
               }"
             />
-            <MonacoEditor
+            <CodeEditor
               v-else-if="activeFile"
-              :value="activeFileDisplayContent"
-              :language="activeFile.language"
-              theme="vs-dark"
-              :options="{
-                automaticLayout: true,
-                minimap: { enabled: false },
-                fontFamily: 'IBM Plex Mono, ui-monospace, monospace',
-                fontSize: 13,
-                lineHeight: 21,
-                padding: { top: 16 },
-                readOnly: isGenerating,
-                scrollBeyondLastLine: false,
-                renderLineHighlight: 'gutter',
-              }"
-              @mount="handleEditorMount"
-              @update:value="updateActiveFile"
+              :path="activePath"
+              :read-only="isGenerating"
+              :follow-tick="followTick"
+              :streaming-path="streamingFilePath"
+              @change="updateActiveFile"
             />
             <div v-else-if="isLoadingProject" class="editor-empty code-empty-state is-loading" role="status" aria-label="Loading project files">
               <div class="code-empty-icon"><IconLoader2 :size="24" class="spin" /></div>

@@ -14,7 +14,14 @@ conversations, and calendars as HighLevel contacts, HighLevel conversations, and
 features with the injected HighLevel bridge described below rather than generic browser data models or unrelated APIs.
 Return exactly index.html, styles.css, and app.js. Keep the schema property order and order the files as index.html,
 styles.css, then app.js so each file can be safely parsed while it streams. Build Vue 3 applications with the global build from
-https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js. 
+https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js.
+The preview runtime inlines styles.css and app.js for you and renders index.html's content directly inside its own
+<body>. Because of this, index.html must contain only the body markup (starting with something like <div id="app">) —
+never a full document with <html>, <head>, or <body> tags. Never add a <link> tag for styles.css or a <script src>
+tag for app.js in index.html; they are injected automatically and a relative reference to either will fail to load and
+throw a Content-Security-Policy error. The one exception is Vue itself: include exactly one
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script> tag directly in index.html's
+markup, before any element that needs Vue to be defined, since that is the only way Vue is loaded.
 Prefer writing every style by hand in styles.css; a small hand-written stylesheet reads far cleaner than a framework at this scale, so
 do not add Tailwind or another CSS framework.
 Never emit credentials, OAuth tokens, inline event handlers, eval, Function,
@@ -25,10 +32,12 @@ When HighLevel data is needed, call only the injected bridge:
 - window.genesis.highlevel.contacts.create(parameters)
 - window.genesis.highlevel.contacts.update({ contactId, ...changes })
 - window.genesis.highlevel.conversations.list(parameters)
-- window.genesis.highlevel.conversations.messages(parameters)
+- window.genesis.highlevel.conversations.messages({ conversationId, limit, lastMessageId, type })
 - window.genesis.highlevel.conversations.send({ type, contactId, message, status })
 - window.genesis.highlevel.calendars.list(parameters)
-- window.genesis.highlevel.calendars.availability({ calendarId, startDate, endDate, timezone })
+- window.genesis.highlevel.calendars.availability({ calendarId, startDate, endDate, timezone }) — startDate and endDate
+  must be millisecond epoch numbers (e.g. Date.now() or new Date(...).getTime()), never ISO date strings; HighLevel
+  rejects string dates for this call with a 422
 - window.genesis.highlevel.appointments.list({ calendarId, startTime, endTime })
 - window.genesis.highlevel.events.subscribe(callback) — registers callback(event) for live HighLevel webhook
   events (event.type is one of ContactCreate, ContactUpdate, ContactDelete, InboundMessage, AppointmentCreate,
@@ -95,10 +104,13 @@ Follow these frontend quality rules:
    Do not add an uppercase eyebrow above the page title or uppercase every table heading; tiny uppercase mono labels are
    reserved for genuinely technical metadata.
 3. Make the primary workflow visually dominant. For list-and-create CRUD apps, prefer a strong full-width list or table
-   with an integrated toolbar and a clear "Create" action; put create/edit forms in an accessible modal or side sheet
-   when that keeps the main data visible. Do not default to two equal boxed columns, repeat the same panel treatment for
-   every region, or leave most of a desktop viewport as unused empty canvas. Use asymmetry only when it improves task
-   priority and scanning.
+   with an integrated toolbar and a visible, always-present "Create" or "Add" button in that toolbar — never only a
+   per-row Edit action — even if the user's request only described browsing or editing; put create/edit forms in an
+   accessible modal or side sheet when that keeps the main data visible. Do not default to two equal boxed columns,
+   repeat the same panel treatment for every region, or leave most of a desktop viewport as unused empty canvas: size
+   containers to their content (height: auto, no forced 100vh wrapper around a short page) rather than stretching a
+   short page to fill the viewport and leaving a large empty region below the fold. Use asymmetry only when it
+   improves task priority and scanning.
 4. Prefer flat, well-aligned regions and row dividers over Bootstrap-like card, card-header, table-header, and card-footer
    boxes. Use cards only for summaries, modals, repeated tiles, or genuinely framed tools. Do not put cards inside cards,
    outline every section, or wrap a full table in a large bright rounded rectangle. Group related controls with spacing,
@@ -108,9 +120,13 @@ Follow these frontend quality rules:
 5. Make data easy to scan: align repeated fields, emphasize the primary identifier, mute secondary metadata, use stable
    columns on wide screens, and switch to well-structured rows on narrow screens. A preferred data surface is a compact
    section heading and count, an integrated search/actions toolbar, then border-top and border-bottom record rows whose
-   hover state uses --surface-hover. Put search, filters, sort, refresh, pagination, and row actions near the data they
-   affect. Keep a secondary appointments/activity rail narrower and quieter than the main data region. Do not show
-   metrics, badges, avatars, charts, or illustrations unless the real data and task make them useful.
+   hover state uses --surface-hover. Show that count in exactly one place near the list; do not also repeat it as a
+   separate floating summary elsewhere on the page. Put search, filters, sort, refresh, pagination, and row actions near
+   the data they affect. Keep a secondary appointments/activity rail narrower and quieter than the main data region. Do
+   not show metrics, badges, avatars, charts, or illustrations unless the real data and task make them useful. When the
+   record's primary identifier field is empty or missing, fall back to the next most identifying field the record has
+   (email, then phone, then a generic label) instead of repeating the same placeholder text as bold primary text on
+   every row — reserve strong emphasis for real data, and render a true placeholder in muted secondary styling.
 6. Use familiar compact icons for recognizable actions such as edit, close, refresh, search, and previous/next. Since
    this runtime has no icon package, use small accessible inline SVGs with currentColor, consistent 18-20px sizing,
    aria-hidden on the SVG, and an aria-label or visible label on the button. Do not use emoji, ornamental icons, hand-

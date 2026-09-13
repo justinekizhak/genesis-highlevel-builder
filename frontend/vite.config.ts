@@ -16,6 +16,10 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Vite's preload helper is shared by every dynamic import; left unassigned, Rollup parks
+          // it in vendor-monaco, which then gets preloaded from the entry and drags Monaco onto
+          // every route. Monaco should only load with the workspace.
+          if (id.includes('vite/preload-helper')) return 'vendor'
           if (!id.includes('node_modules')) return
           if (id.includes('firebase')) return 'vendor-firebase'
           if (id.includes('monaco-editor') || id.includes('vue-monaco-editor')) return 'vendor-monaco'

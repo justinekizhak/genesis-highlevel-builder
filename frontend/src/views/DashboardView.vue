@@ -160,16 +160,6 @@ async function signOut() {
             {{ highLevel.loading ? 'Checking' : highLevel.connection.connected ? 'Connected' : 'Connect HighLevel' }}
           </Button>
         </section>
-        <section class="connection-row model-info" aria-label="Generation model">
-          <div class="connection-copy model-info-copy">
-            <IconCpu :size="20" />
-            <div>
-              <span class="model-info-label">Generation model</span>
-              <strong>{{ highLevel.llm.configured ? highLevel.llm.model : 'AI model is not configured' }}</strong>
-              <span>{{ highLevel.llm.configured ? 'Used for structured app generation.' : 'Set the Firebase OPENAI_API_KEY secret to enable generation.' }}</span>
-            </div>
-          </div>
-        </section>
       </div>
       <p v-if="highLevel.error" class="form-error connection-error">{{ highLevel.error }}</p>
 

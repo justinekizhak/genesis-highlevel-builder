@@ -244,6 +244,8 @@ button { touch-action: manipulation; }
 .file-tree button:hover { background: #201f1b; color: #d4d0c6; }
 .file-tree button.active { background: #29261e; color: #f0c66e; }
 .tree-empty { padding: 8px; color: var(--muted-foreground); font-size: 10px; line-height: 1.5; }
+.ai-edit-caret { width: 2px !important; background: var(--accent); animation: cursor-blink 0.85s steps(1) infinite; }
+.code-editor-surface { min-width: 0; min-height: 0; height: 100%; width: 100%; }
 .editor-wrap { position: relative; display: grid; grid-template-rows: 34px minmax(0, 1fr); min-width: 0; min-height: 0; background: #1e1e1e; }
 .editor-tabs-root { min-width: 0; overflow: hidden; border-bottom: 1px solid #34332f; background: #171715; }
 .editor-tabs { display: flex; max-width: 100%; overflow-x: auto; }
@@ -1009,7 +1011,6 @@ button { touch-action: manipulation; }
 .dashboard-intro h1 { max-width: 720px; color: #f2f1ed; font-size: clamp(42px, 5.3vw, 68px); font-weight: 610; line-height: .98; letter-spacing: -.065em; }
 .dashboard-intro div > span { max-width: 580px; margin-top: 16px; color: #a3a39b; font-size: 15px; line-height: 1.55; }
 .integration-list {
-  grid-template-columns: minmax(0, 1.18fr) minmax(0, .82fr);
   gap: 12px;
   margin-bottom: 64px;
 }
