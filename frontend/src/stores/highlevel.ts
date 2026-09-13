@@ -14,6 +14,7 @@ type ConnectionStatus = {
 type ModelStatus = {
   configured: boolean
   model: string
+  availableModels?: string[]
 }
 
 type IntegrationStatus = {

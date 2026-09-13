@@ -69,6 +69,19 @@ describe('OpenAI streaming transport', () => {
     expect(requestBody.stream).toBe(true)
     expect(requestBody.instructions).toContain('interpret contacts,\nconversations, and calendars as HighLevel contacts')
     expect(requestBody.instructions).toContain('window.genesis.highlevel.contacts.list(parameters)')
+    expect(requestBody.instructions).toContain('call the write method directly')
+    expect(requestBody.instructions).toContain('Do not add an\nextra confirmation')
+    expect(requestBody.instructions).not.toContain('host asks the user to confirm')
+  })
+
+  it('uses the model selected by the generation request', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    const json = JSON.stringify(application)
+    createMock.mockResolvedValue(eventsOf(deltaEvents(json, 50)))
+
+    await generateWithOpenAi('Build contacts', {}, undefined, undefined, undefined, 'gpt-5.4')
+
+    expect(createMock.mock.calls[0]?.[0].model).toBe('gpt-5.4')
   })
 
   it('never asks the model to reach for Tailwind or another CSS framework', async () => {
@@ -78,8 +91,31 @@ describe('OpenAI streaming transport', () => {
     const requestBody = createMock.mock.calls[0]?.[0]
     expect(requestBody.instructions).not.toContain('@tailwindcss/browser')
     expect(requestBody.instructions).toContain('do not add Tailwind')
-    expect(requestBody.instructions).toContain('--accent: #e8bd62')
+    expect(requestBody.instructions).toContain('--background: #0d0e0d')
+    expect(requestBody.instructions).toContain('--accent: #dfb85f')
+    expect(requestBody.instructions).toContain('first non-comment characters in styles.css must be\n   exactly ":root {"')
+    expect(requestBody.instructions).toContain('a bare declaration at the top level\n   is invalid CSS')
     expect(requestBody.instructions).toContain('Load more')
+  })
+
+  it('steers generated apps toward polished, domain-appropriate product UI', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    createMock.mockResolvedValue(eventsOf([]))
+    await generateWithOpenAi('Build contacts', {}).catch(() => {})
+    const requestBody = createMock.mock.calls[0]?.[0]
+    expect(requestBody.instructions).toContain("The generated application is the user's product")
+    expect(requestBody.instructions).toContain('same minimal, modern, warm-dark design')
+    expect(requestBody.instructions).toContain('prefer a strong full-width list or table')
+    expect(requestBody.instructions).toContain('13-14px body and controls')
+    expect(requestBody.instructions).toContain('Honor prefers-reduced-motion')
+    expect(requestBody.instructions).toContain('360px phones through wide desktop')
+    expect(requestBody.instructions).toContain('no Bootstrap-like\ncard/table composition remains')
+    expect(requestBody.instructions).toContain('Use either one global refresh action or scoped refresh actions, never both')
+    expect(requestBody.instructions).toContain('A select must use appearance: none')
+    expect(requestBody.instructions).toContain('Do not truncate short email addresses or phone numbers')
+    expect(requestBody.instructions).toContain('at most two framed surface groups')
+    expect(requestBody.instructions).not.toContain('Two type sizes only')
+    expect(requestBody.instructions).not.toContain('Exactly one per screen')
   })
 
   it('explains how to recover when OpenAI rejects the configured key', async () => {

@@ -148,6 +148,7 @@ export async function persistGeneration(input: {
   generationId: string
   snapshotId: string
   provider: 'openai'
+  model: string
 }) {
   const projectReference = await requireOwnedProject(input.uid, input.projectId)
   const db = getFirestore()
@@ -163,6 +164,7 @@ export async function persistGeneration(input: {
     summary: input.application.summary,
     files: Object.fromEntries(input.application.files.map((file) => [file.path, file.content])),
     provider: input.provider,
+    model: input.model,
     createdAt: now,
   })
   for (const file of input.application.files) {
@@ -184,6 +186,7 @@ export async function persistPartialGeneration(input: {
   files: Record<string, string>
   uid: string
   provider: 'openai'
+  model: string
 }) {
   const projectReference = await requireOwnedProject(input.uid, input.projectId)
   const batch = getFirestore().batch()
@@ -204,6 +207,7 @@ export async function persistPartialGeneration(input: {
       summary,
       files: input.files,
       provider: input.provider,
+      model: input.model,
       kind: 'partial',
       createdAt: now,
     })
@@ -243,6 +247,7 @@ export async function listProjectSnapshots(uid: string, projectId: string) {
     summary: document.get('summary') ?? '',
     label: document.get('label') ?? '',
     provider: document.get('provider') ?? 'unknown',
+    model: document.get('model'),
     kind: document.get('kind') ?? 'generation',
     fileCount: Object.keys(document.get('files') ?? {}).length,
     createdAt: document.get('createdAt')?.toDate?.().toISOString() ?? new Date(0).toISOString(),

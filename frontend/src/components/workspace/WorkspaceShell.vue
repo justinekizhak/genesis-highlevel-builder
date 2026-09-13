@@ -9,6 +9,7 @@ import {
   IconBraces,
   IconChevronLeft,
   IconChevronRight,
+  IconChevronDown,
   IconCode,
   IconCommand,
   IconDownload,
@@ -33,19 +34,11 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
 import { renderChatMarkdown } from '@/lib/markdown'
 import { requireFirestore } from '@/services/firebase'
 import { hlEventLabel } from '@/lib/highlevel-events'
 import { buildSrcdoc } from '@/lib/srcdoc'
-import { buildGenerationDiff, type GenerationFileDiff } from '@/lib/generation-diff'
+import { buildGenerationDiff, firstChangedLine, type GenerationFileDiff } from '@/lib/generation-diff'
 import { buildProjectArchive, projectArchiveFilename } from '@/lib/project-archive'
 import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
@@ -71,8 +64,16 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import { useHighLevelStore } from '@/stores/highlevel'
 import { useProjectsStore } from '@/stores/projects'
-import type { ChatMessage, GeneratedFile, GenerationEvent, ProjectSnapshot } from '@/types/generation'
-import { highLevelOperationSet, highLevelWriteOperationSet, type HighLevelOperation, type HighLevelParameters } from '@/types/highlevel'
+import {
+  generationModels,
+  isGenerationModel,
+  type ChatMessage,
+  type GeneratedFile,
+  type GenerationEvent,
+  type GenerationModel,
+  type ProjectSnapshot,
+} from '@/types/generation'
+import { highLevelOperationSet, type HighLevelOperation, type HighLevelParameters } from '@/types/highlevel'
 
 const route = useRoute()
 const router = useRouter()
@@ -106,6 +107,7 @@ const messages = ref<ChatMessage[]>([
   },
 ])
 const prompt = ref('')
+const selectedModel = ref<GenerationModel>('gpt-5.4-mini')
 const isLoadingProject = ref(true)
 const isGenerating = ref(false)
 const isStopping = ref(false)
@@ -129,7 +131,6 @@ type BridgeRequest = {
   sourceId: string
   respond: (response: BridgeResponse) => void
 }
-const pendingWriteRequest = ref<BridgeRequest>()
 const snapshotOpen = ref(false)
 const snapshots = ref<ProjectSnapshot[]>([])
 const snapshotLoading = ref(false)
@@ -165,7 +166,6 @@ const hasOpenOverlay = computed(() => (
   || attentionOpen.value
   || projectEditorOpen.value
   || diffOpen.value
-  || Boolean(pendingWriteRequest.value)
   || commandPaletteOpen.value
   || shortcutsOpen.value
 ))
@@ -179,17 +179,7 @@ let savedIndicatorTimer: number | undefined
 let cancelFallbackTimer: number | undefined
 const bridgeRequests = new Set<string>()
 let workspaceAnimation: { cancel?: () => void } | undefined
-
-const writeConfirmationLabels: Partial<Record<HighLevelOperation, string>> = {
-  'contacts.create': 'create a HighLevel contact',
-  'contacts.update': 'update a HighLevel contact',
-  'conversations.send': 'send a HighLevel message',
-}
-const writeConfirmationLabel = computed(() => (
-  pendingWriteRequest.value
-    ? writeConfirmationLabels[pendingWriteRequest.value.operation] ?? 'change HighLevel data'
-    : 'change HighLevel data'
-))
+let codeEditor: { revealLineInCenter: (lineNumber: number) => void } | undefined
 
 const activeFile = computed(() => files.value[activePath.value])
 const fileList = computed(() => Object.values(files.value))
@@ -350,6 +340,18 @@ function openFile(path: string) {
   showInlineDiff.value = !isGenerating.value && generationDiffs.value.some((file) => file.path === path)
 }
 
+function handleEditorMount(editor: { revealLineInCenter: (lineNumber: number) => void }) {
+  codeEditor = editor
+}
+
+function scrollToFirstChange(path: string, before: string, after: string) {
+  const line = firstChangedLine(before, after)
+  if (line === undefined || activePath.value !== path) return
+  nextTick(() => {
+    if (activePath.value === path) codeEditor?.revealLineInCenter(line)
+  })
+}
+
 function parseBridgeRequest(data: Record<string, unknown> | null, sourceId: string, respond: BridgeRequest['respond']) {
   if (!data || data.channel !== 'genesis.highlevel.v1' || data.direction !== 'request') return
   if (typeof data.requestId !== 'string' || !/^[A-Za-z0-9-]{1,80}$/.test(data.requestId)) return
@@ -376,7 +378,7 @@ function postBridgeResponse(request: BridgeRequest, response: BridgeResponse) {
   request.respond(response)
 }
 
-async function executeBridgeRequest(request: NonNullable<typeof pendingWriteRequest.value>) {
+async function executeBridgeRequest(request: BridgeRequest) {
   bridgeError.value = ''
   try {
     const data = await highLevelStore.execute(request.operation, request.parameters)
@@ -398,15 +400,6 @@ async function processHighLevelBridgeMessage(
   const request = parseBridgeRequest(data, sourceId, respond)
   if (!request || bridgeRequests.has(request.requestId) || bridgeRequests.size >= 8) return
   bridgeRequests.add(request.requestId)
-  if (highLevelWriteOperationSet.has(request.operation)) {
-    if (pendingWriteRequest.value) {
-      postBridgeResponse(request, { ok: false, error: 'Another HighLevel change is awaiting confirmation.' })
-      bridgeRequests.delete(request.requestId)
-      return
-    }
-    pendingWriteRequest.value = request
-    return
-  }
   await executeBridgeRequest(request)
 }
 
@@ -418,12 +411,6 @@ async function handleHighLevelBridge(event: MessageEvent) {
     }, '*')
   }
   await processHighLevelBridgeMessage(event.data as Record<string, unknown> | null, 'iframe', respond)
-}
-
-async function confirmHighLevelWrite() {
-  const request = pendingWriteRequest.value
-  pendingWriteRequest.value = undefined
-  if (request) await executeBridgeRequest(request)
 }
 
 function forwardHighLevelEvent(hlEvent: { type: string; payload: unknown }) {
@@ -450,14 +437,6 @@ function startHlEventsListener() {
       forwardHighLevelEvent({ type: data.type, payload: data.payload })
     }
   }, (error) => console.error('Could not watch HighLevel events', error))
-}
-
-function cancelHighLevelWrite() {
-  const request = pendingWriteRequest.value
-  pendingWriteRequest.value = undefined
-  if (!request) return
-  postBridgeResponse(request, { ok: false, error: 'HighLevel change cancelled by the user.' })
-  bridgeRequests.delete(request.requestId)
 }
 
 onMounted(async () => {
@@ -502,6 +481,9 @@ onBeforeUnmount(() => {
   workspaceAnimation?.cancel?.()
 })
 watch(() => highLevelStore.connection.connected, renderPreview)
+watch(() => highLevelStore.llm.model, (model) => {
+  if (isGenerationModel(model)) selectedModel.value = model
+}, { immediate: true })
 watch([() => messageTypewriter.revealedLength.value, () => messages.value.length], () => {
   const container = messagesContainer.value
   if (!container) return
@@ -651,6 +633,7 @@ function handleEvent(event: GenerationEvent) {
   switch (event.type) {
     case 'generation_started':
       currentGenerationId.value = event.generationId
+      if (event.model && isGenerationModel(event.model)) selectedModel.value = event.model
       break
     case 'token': {
       const last = messages.value.at(-1)
@@ -678,7 +661,7 @@ function handleEvent(event: GenerationEvent) {
         files.value[event.path] = { path: event.path, language: event.language, content: '' }
         streamingFilePath.value = event.path
         fileTypewriter.reset()
-        fileTypewriter.start(() => files.value[event.path]?.content.length ?? 0)
+        fileTypewriter.start(() => files.value[event.path]?.content ?? '')
       }
       openFile(event.path)
       mobilePanel.value = 'code'
@@ -691,7 +674,10 @@ function handleEvent(event: GenerationEvent) {
         break
       }
       const file = files.value[event.path]
-      if (file) files.value[event.path] = { ...file, content: file.content + event.delta }
+      if (file) {
+        files.value[event.path] = { ...file, content: file.content + event.delta }
+        fileTypewriter.wake()
+      }
       break
     }
     case 'file_complete': {
@@ -710,6 +696,7 @@ function handleEvent(event: GenerationEvent) {
           const file = files.value[event.path]
           if (file) files.value[event.path] = { ...file, content: text }
         })
+        scrollToFirstChange(event.path, before, after)
         break
       }
       const file = files.value[event.path]
@@ -723,6 +710,7 @@ function handleEvent(event: GenerationEvent) {
       queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
       break
     case 'complete':
+      finishRefinementReveals()
       generationDiffs.value = filesBeforeGeneration ? buildGenerationDiff(filesBeforeGeneration, files.value) : []
       lastGenerationBefore.value = filesBeforeGeneration
       showInlineDiff.value = generationDiffs.value.some((file) => file.path === activePath.value)
@@ -736,6 +724,7 @@ function handleEvent(event: GenerationEvent) {
       break
     case 'error':
       if (!(isStopping.value && event.code === 'GENERATION_CANCELLED')) generationError.value = event.message
+      finishRefinementReveals()
       messageTypewriter.finish()
       typingMessageId.value = undefined
       fileTypewriter.finish()
@@ -772,6 +761,7 @@ async function submitPrompt(suggestion?: string) {
       prompt: value,
       projectId: projectId.value,
       generationId: currentGenerationId.value,
+      model: selectedModel.value,
       currentFiles: filesBeforeGeneration ?? {},
       idToken: await authStore.getIdToken(),
       signal: controller.signal,
@@ -802,12 +792,18 @@ function clearRefinementState() {
   refinementBuffers.clear()
 }
 
+function finishRefinementReveals() {
+  for (const reveal of diffReveals.values()) reveal.finish()
+  diffReveals.clear()
+}
+
 async function stopGeneration() {
   if (!controller || isStopping.value) return
   const activeController = controller
   isStopping.value = true
   const generationId = currentGenerationId.value
   filesBeforeGeneration = undefined
+  finishRefinementReveals()
   clearRefinementState()
   messageTypewriter.finish()
   typingMessageId.value = undefined
@@ -1029,7 +1025,16 @@ const { list: shortcutsList } = useShortcuts([
               @keydown.enter.exact.prevent="submitPrompt()"
             />
             <div class="composer-footer">
-              <span>Enter to send, Shift + Enter for a new line</span>
+              <div class="composer-statusbar">
+                <label class="model-select" title="Choose the model for the next generation">
+                  <span class="sr-only">Generation model</span>
+                  <select v-model="selectedModel" :disabled="isGenerating" aria-label="Generation model">
+                    <option v-for="model in generationModels" :key="model.value" :value="model.value">{{ model.label }}</option>
+                  </select>
+                  <IconChevronDown :size="12" aria-hidden="true" />
+                </label>
+                <span class="composer-hint"><kbd>Enter</kbd><span>to send</span></span>
+              </div>
               <Button v-if="isGenerating" type="button" variant="secondary" size="icon" aria-label="Stop generation" :disabled="isStopping" @click="stopGeneration">
                 <IconPlayerStop :size="15" />
               </Button>
@@ -1151,6 +1156,7 @@ const { list: shortcutsList } = useShortcuts([
                 scrollBeyondLastLine: false,
                 renderLineHighlight: 'gutter',
               }"
+              @mount="handleEditorMount"
               @update:value="updateActiveFile"
             />
             <div v-else-if="isLoadingProject" class="editor-empty code-empty-state is-loading" role="status" aria-label="Loading project files">
@@ -1310,19 +1316,6 @@ const { list: shortcutsList } = useShortcuts([
         <DiffFileList :files="generationDiffs" empty-message="Generate a revision to see its changes." />
       </SheetContent>
     </Sheet>
-
-    <AlertDialog :open="Boolean(pendingWriteRequest)" @update:open="(open) => { if (!open) cancelHighLevelWrite() }">
-      <AlertDialogContent class="alert-dialog" aria-describedby="highlevel-write-description">
-        <AlertDialogTitle>Confirm HighLevel change</AlertDialogTitle>
-        <AlertDialogDescription id="highlevel-write-description">
-          This generated app wants to {{ writeConfirmationLabel }}. This changes data in the connected location and cannot be simulated in the preview.
-        </AlertDialogDescription>
-        <div class="dialog-actions">
-          <AlertDialogCancel as-child><Button variant="ghost" @click="cancelHighLevelWrite">Cancel</Button></AlertDialogCancel>
-          <AlertDialogAction as-child><Button @click="confirmHighLevelWrite">Confirm change</Button></AlertDialogAction>
-        </div>
-      </AlertDialogContent>
-    </AlertDialog>
 
     <CommandPalette
       v-model:open="commandPaletteOpen"

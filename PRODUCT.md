@@ -22,7 +22,7 @@ Generation is refused server-side unless the project has a connected HighLevel `
 
 - Sign in (Firebase email/password) → connect a HighLevel location via OAuth → create a project → describe the desired app in chat.
 - Generation streams over SSE into Monaco; the editor is read-only while a generation is in flight.
-- The generated app runs live in a CSP-restricted sandboxed iframe with no direct network access; all HighLevel calls cross an injected `window.genesis.highlevel` bridge → `postMessage` → an authenticated, rate-limited Cloud Function proxy. Write operations (create/update contact, send message) pause in a confirmation dialog before executing.
+- The generated app runs live in a CSP-restricted sandboxed iframe with no direct network access; all HighLevel calls cross an injected `window.genesis.highlevel` bridge → `postMessage` → an authenticated, rate-limited Cloud Function proxy. Write operations (create/update contact, send message) execute immediately after an explicit action in the generated app.
 - Every generation and every manual file edit appends a restorable snapshot; a history/restore UI surfaces these.
 - Follow-up prompts revise existing files iteratively rather than regenerating from scratch, with a diff view against the pre-generation state.
 - Rate limits apply per user: 5 generations/min, 50/day, 60 HighLevel-proxy calls/min.

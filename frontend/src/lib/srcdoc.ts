@@ -99,6 +99,7 @@ const emptyPreviewMarkup = `<main class="genesis-empty-preview">
   <p>Describe an app in the chat to see it here.</p>
 </main>`
 const emptyPreviewStyles = `:root{color-scheme:dark}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#141411;font-family:ui-sans-serif,system-ui,sans-serif}.genesis-empty-preview{color:#777870;text-align:center;padding:24px}.genesis-empty-preview p{margin:0;font-size:13px}`
+const generatedAppThemeGuard = `:root{color-scheme:dark;--background:#0d0e0d;--canvas:#11110f;--surface:#131412;--surface-raised:#1b1c19;--surface-hover:#22231f;--surface-sunken:#0a0b0a;--text:#f2f1ed;--text-soft:#c5c4bd;--text-muted:#9b9b93;--border:#30312c;--input:#3a3b35;--accent:#dfb85f;--accent-hover:#e7c36f;--accent-ink:#17150f;--ring:#e4bd65;--success:#85c98f;--warning:#efc973;--danger:#c85b54}html{background:var(--background);color-scheme:dark}body{background:var(--background);color:var(--text);font-family:Geist,"Avenir Next","SF Pro Text",ui-sans-serif,system-ui,sans-serif;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button,input,select,textarea{color:inherit;font:inherit}select{color-scheme:dark;background-color:var(--surface-sunken)}::selection{background:rgb(223 184 95/.28);color:var(--text)}`
 
 export function buildSrcdoc(
   files: Record<string, GeneratedFile>,
@@ -127,6 +128,7 @@ export function buildSrcdoc(
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; img-src data:; connect-src ${connectSrc}; form-action 'none'; base-uri 'none'" />
   <style>${styles}</style>
+  ${hasApp ? `<style data-genesis-theme-guard>${generatedAppThemeGuard}</style>` : ''}
 </head>
 <body>
 ${markup}

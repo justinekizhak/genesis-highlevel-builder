@@ -43,4 +43,10 @@ describe('createDiffReveal', () => {
     const reveal = createDiffReveal('line1\nline2', 'line1\nCHANGED')
     expect(reveal.addedTotal).toBe('CHANGED'.length)
   })
+
+  it('never reveals half of a UTF-16 surrogate pair', () => {
+    const reveal = createDiffReveal('', '🚀 launch')
+    expect(reveal.tick(1)).toBe('🚀')
+    expect(reveal.tick(1)).toBe('🚀 ')
+  })
 })

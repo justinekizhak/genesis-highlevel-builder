@@ -53,6 +53,7 @@ describe('generateApplication', () => {
       prompt: 'Build a dashboard',
       projectId: 'project-1',
       generationId: '13f4f45c-4fc1-4fc9-89bc-29f712340eb2',
+      model: 'gpt-5.4',
       currentFiles: {},
       idToken: 'token',
       signal: new AbortController().signal,
@@ -61,7 +62,7 @@ describe('generateApplication', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
-      body: expect.stringContaining('13f4f45c-4fc1-4fc9-89bc-29f712340eb2'),
+      body: expect.stringContaining('"model":"gpt-5.4"'),
     }))
     expect(events).toEqual([{ type: 'complete', generationId: 'g1' }])
     vi.unstubAllGlobals()

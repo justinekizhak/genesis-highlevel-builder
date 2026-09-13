@@ -1,9 +1,10 @@
-import type { ChatMessage, GeneratedFile, GenerationEvent, ProjectSnapshot } from '@/types/generation'
+import type { ChatMessage, GeneratedFile, GenerationEvent, GenerationModel, ProjectSnapshot } from '@/types/generation'
 
 type GenerateOptions = {
   prompt: string
   projectId: string
   generationId: string
+  model: GenerationModel
   currentFiles: Record<string, GeneratedFile>
   idToken?: string
   signal: AbortSignal
@@ -100,6 +101,7 @@ export async function generateApplication(options: GenerateOptions) {
         prompt: options.prompt,
         projectId: options.projectId,
         generationId: options.generationId,
+        model: options.model,
       }),
       signal: options.signal,
     })

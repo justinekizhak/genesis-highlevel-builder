@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildGenerationDiff } from './generation-diff'
+import { buildGenerationDiff, firstChangedLine } from './generation-diff'
 
 const file = (path: string, content: string) => ({ path, content, language: 'javascript' })
 
@@ -16,5 +16,22 @@ describe('buildGenerationDiff', () => {
   it('omits unchanged files', () => {
     const source = { 'app.js': file('app.js', 'same') }
     expect(buildGenerationDiff(source, source)).toEqual([])
+  })
+})
+
+describe('firstChangedLine', () => {
+  it('finds a replacement below unchanged content', () => {
+    expect(firstChangedLine(
+      'one\ntwo\nthree\nfour\n',
+      'one\ntwo\nchanged\nfour\n',
+    )).toBe(3)
+  })
+
+  it('finds an insertion at the end of a file', () => {
+    expect(firstChangedLine('one\ntwo\n', 'one\ntwo\nthree\n')).toBe(3)
+  })
+
+  it('returns no line for unchanged content', () => {
+    expect(firstChangedLine('same\n', 'same\n')).toBeUndefined()
   })
 })

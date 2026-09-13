@@ -101,18 +101,17 @@ pnpm run test
 The generated iframe cannot call HighLevel directly. It can request only these allowlisted bridge operations:
 
 - `contacts.list`
-- `contacts.create` (confirmation required)
-- `contacts.update` (confirmation required)
+- `contacts.create`
+- `contacts.update`
 - `conversations.list`
 - `conversations.messages`
-- `conversations.send` (confirmation required)
+- `conversations.send`
 - `calendars.list`
 - `calendars.availability`
 - `appointments.list`
 
 Every request is source-checked in the browser, authenticated with Firebase, allowlisted in the Function, rate-limited,
-and executed with the server-side HighLevel token. Write requests pause in a shadcn-vue alert dialog until the user
-confirms them.
+and executed with the server-side HighLevel token. Writes execute immediately after an explicit action in the generated app.
 
 ## OpenAI configuration
 
@@ -122,8 +121,9 @@ The API key is read only by the generation function and is never sent to the Vue
 firebase functions:secrets:set OPENAI_API_KEY
 ```
 
-`OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in the Firebase environment. If the secret isn't set,
-or OpenAI returns an out-of-quota error, `generateApp` fails with a clear, user-facing message instead of silently
+`OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be overridden in the Firebase environment. The chat composer lets users
+choose `gpt-5.4`, `gpt-5.4-mini`, or `gpt-5.4-nano` for each generation; the configured model remains the fallback when a
+request does not specify one. If the secret isn't set, or OpenAI returns an out-of-quota error, `generateApp` fails with a clear, user-facing message instead of silently
 substituting placeholder content — Genesis never fabricates data to paper over a misconfigured or exhausted account.
 
 Copy `functions/.env.example` to the Firebase project-specific environment file and fill in the non-secret values. Do not put either API secret in a dotenv file.

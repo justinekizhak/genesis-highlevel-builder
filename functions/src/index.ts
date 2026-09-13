@@ -4,7 +4,7 @@ import { logger } from 'firebase-functions'
 import { onRequest } from 'firebase-functions/v2/https'
 import { z } from 'zod'
 import { buildApplicationEvents } from './generate/application.js'
-import { generateWithOpenAi, openAiApiKey, openAiModel } from './generate/openai.js'
+import { generateWithOpenAi, openAiApiKey, openAiModel, selectableOpenAiModels } from './generate/openai.js'
 import {
   acquireGenerationLock,
   GenerationLockedError,
@@ -46,6 +46,7 @@ const generateRequestSchema = z.object({
   prompt: z.string().trim().min(3).max(4_000),
   projectId: z.string().trim().min(1).max(128),
   generationId: z.string().uuid().optional(),
+  model: z.enum(selectableOpenAiModels).optional(),
 }).strict()
 
 const cancelGenerationSchema = z.object({
@@ -117,6 +118,7 @@ export const generateApp = onRequest(
       prompt: string
       generationId: string
       provider: 'openai'
+      model: string
       parser: StructuredApplicationStream
       currentFiles: Record<string, string>
     } | undefined
@@ -143,6 +145,7 @@ export const generateApp = onRequest(
       if (!openAiApiKey.value()) throw new Error('AI generation is not configured. Set the OPENAI_API_KEY secret and redeploy the generation function.')
       if (!generationContext.project.locationId) throw new Error('Connect a HighLevel location to this project before generating an app.')
       const generationId = input.generationId ?? crypto.randomUUID()
+      const generationModel = input.model ?? openAiModel.value()
       await acquireGenerationLock(user.uid, input.projectId, generationId)
       lockHeld = true
       lockedProject = { uid: user.uid, projectId: input.projectId, generationId }
@@ -153,6 +156,7 @@ export const generateApp = onRequest(
         projectId: input.projectId,
         promptLength: input.prompt.length,
         provider: 'openai',
+        model: generationModel,
       })
 
       response.status(200)
@@ -183,7 +187,7 @@ export const generateApp = onRequest(
         type: 'generation_started',
         generationId,
         provider: 'openai',
-        model: openAiModel.value(),
+        model: generationModel,
       }))
       try {
         const streamParser = new StructuredApplicationStream()
@@ -193,6 +197,7 @@ export const generateApp = onRequest(
           prompt: input.prompt,
           generationId,
           provider: 'openai',
+          model: generationModel,
           parser: streamParser,
           currentFiles,
         }
@@ -200,7 +205,7 @@ export const generateApp = onRequest(
           for (const event of streamParser.push(delta)) {
             if (!response.destroyed) response.write(serializeSse(event))
           }
-        }, generationContext)
+        }, generationContext, generationModel)
         validateGeneratedApplication(application)
         const built = buildApplicationEvents(application, 160, { generationId })
         await persistGeneration({
@@ -211,6 +216,7 @@ export const generateApp = onRequest(
           generationId,
           snapshotId: built.snapshotId,
           provider: 'openai',
+          model: generationModel,
         })
         generationPersisted = true
 
@@ -242,6 +248,7 @@ export const generateApp = onRequest(
           prompt: partialGeneration.prompt,
           generationId: partialGeneration.generationId,
           provider: partialGeneration.provider,
+          model: partialGeneration.model,
           summary: partialGeneration.parser.partialSummary(),
           files: { ...partialGeneration.currentFiles, ...partialGeneration.parser.partialFiles() },
         }).catch((persistenceError) => logger.error('Could not preserve partial generation', persistenceError))
@@ -461,7 +468,7 @@ export const integrationStatus = onRequest(
       const user = await requireFirebaseUser(request)
       const connection = await getConnectionSummary(user.uid)
       response.json({
-        llm: { configured: Boolean(openAiApiKey.value()), model: openAiModel.value() },
+        llm: { configured: Boolean(openAiApiKey.value()), model: openAiModel.value(), availableModels: selectableOpenAiModels },
         highLevel: connection ? {
           connected: true,
           ...connection,

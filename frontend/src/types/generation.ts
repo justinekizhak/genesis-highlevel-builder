@@ -4,6 +4,18 @@ export type GeneratedFile = {
   language: string
 }
 
+export const generationModels = [
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+  { value: 'gpt-5.4', label: 'GPT-5.4' },
+  { value: 'gpt-5.4-nano', label: 'GPT-5.4 nano' },
+] as const
+
+export type GenerationModel = (typeof generationModels)[number]['value']
+
+export function isGenerationModel(value: string): value is GenerationModel {
+  return generationModels.some((model) => model.value === value)
+}
+
 export type GenerationEvent =
   | { type: 'generation_started'; generationId: string; provider?: 'openai'; model?: string }
   | { type: 'token'; delta: string }
@@ -27,6 +39,7 @@ export type ProjectSnapshot = {
   summary: string
   label?: string
   provider: string
+  model?: string
   kind?: 'generation' | 'partial' | 'backup' | 'manual'
   fileCount: number
   createdAt: string

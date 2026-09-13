@@ -13,6 +13,21 @@ export type GenerationFileDiff = {
   lines: GenerationDiffLine[]
 }
 
+export function firstChangedLine(before: string, after: string): number | undefined {
+  if (before === after) return undefined
+
+  let line = 1
+  for (const part of diffLines(before, after)) {
+    if (part.added || part.removed) {
+      const lastLine = Math.max(1, after.split('\n').length - (after.endsWith('\n') ? 1 : 0))
+      return Math.min(line, lastLine)
+    }
+    line += part.count ?? 0
+  }
+
+  return 1
+}
+
 export function buildGenerationDiff(
   before: Record<string, GeneratedFile>,
   after: Record<string, GeneratedFile>,

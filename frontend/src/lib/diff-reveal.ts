@@ -2,6 +2,13 @@ import { diffLines } from 'diff'
 
 type DiffStep = { kind: 'context' | 'removed' | 'added'; text: string }
 
+function avoidSplittingSurrogatePair(text: string, end: number) {
+  if (end <= 0 || end >= text.length) return end
+  const previous = text.charCodeAt(end - 1)
+  const next = text.charCodeAt(end)
+  return previous >= 0xD800 && previous <= 0xDBFF && next >= 0xDC00 && next <= 0xDFFF ? end + 1 : end
+}
+
 /**
  * Drives a refinement's editor content from `before` to `after` one animation tick at a time,
  * so unchanged lines never move and only the actually-changed hunks visibly type in. Unlike a
@@ -42,7 +49,7 @@ export function createDiffReveal(before: string, after: string) {
       }
       if (budget <= 0) break
       const remainingInStep = step.text.length - addedOffset
-      const take = Math.min(remainingInStep, budget)
+      const take = avoidSplittingSurrogatePair(step.text, addedOffset + Math.min(remainingInStep, budget)) - addedOffset
       prefix += step.text.slice(addedOffset, addedOffset + take)
       addedOffset += take
       budget -= take

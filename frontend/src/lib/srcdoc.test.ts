@@ -12,7 +12,27 @@ describe('buildSrcdoc', () => {
     expect(result).toContain("script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net")
     expect(result).toContain('<main>Hello</main>')
     expect(result).toContain('console.log("ready")')
+    expect(result).toContain('<style data-genesis-theme-guard>')
+    expect(result).toContain('--background:#0d0e0d')
+    expect(result).toContain('font-family:Geist,"Avenir Next","SF Pro Text"')
+    expect(result).toContain('-webkit-font-smoothing:antialiased')
+    expect(result).toContain('select{color-scheme:dark;background-color:var(--surface-sunken)}')
     expect(result).not.toContain('genesis.highlevel.v1')
+  })
+
+  it('keeps the generated app dark when its token rule is malformed', () => {
+    const result = buildSrcdoc({
+      'index.html': { path: 'index.html', content: '<main>Hello</main>', language: 'html' },
+      'styles.css': {
+        path: 'styles.css',
+        content: 'color-scheme: dark; :root { --background: #0d0e0d; } body { background: var(--background); }',
+        language: 'css',
+      },
+      'app.js': { path: 'app.js', content: '', language: 'javascript' },
+    })
+
+    expect(result).toContain('<style data-genesis-theme-guard>:root{color-scheme:dark;--background:#0d0e0d')
+    expect(result.indexOf('data-genesis-theme-guard')).toBeGreaterThan(result.indexOf('color-scheme: dark; :root'))
   })
 
   it('injects only the allowlisted HighLevel bridge when enabled', () => {
