@@ -113,6 +113,23 @@ describe('OpenAI streaming transport', () => {
     expect(instructions).toContain('app.js uses the global Vue object')
   })
 
+  it('documents nested HighLevel list response shapes and join keys for generated apps', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    createMock.mockResolvedValue(eventsOf([]))
+    await generateWithOpenAi('Build an appointment dashboard with contact and calendar details', {}).catch(() => {})
+    const instructions = createMock.mock.calls[0]?.[0].instructions as string
+
+    expect(instructions).toContain('const calendars = calendarsResponse.calendars')
+    expect(instructions).toContain('const contacts = contactsResponse.contacts')
+    expect(instructions).toContain('const appointments = appointmentsResponse.events')
+    expect(instructions).toContain('contactsResponse.meta')
+    expect(instructions).toContain('appointment.contactId -> contact.id')
+    expect(instructions).toContain('appointment.calendarId -> calendar.id')
+    expect(instructions).toContain('appointment.appointmentStatus ?? appointment.appoinmentStatus')
+    expect(instructions).toContain('calendar.appointmentPerSlot ?? calendar.appoinmentPerSlot')
+    expect(instructions).toContain('The list key is "events", not "appointments"')
+  })
+
   it('steers generated apps toward polished, domain-appropriate product UI', async () => {
     process.env.OPENAI_API_KEY = 'test-key'
     createMock.mockResolvedValue(eventsOf([]))

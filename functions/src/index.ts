@@ -300,7 +300,7 @@ export const projectSnapshots = onRequest({ region: 'us-central1', cors: false }
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
   try {
     const user = await requireFirebaseUser(request)
-    const projectId = z.string().trim().min(1).max(128).parse(request.query.projectId)
+    const projectId = z.string().trim().min(1).max(128).parse(request.params.projectId ?? request.query.projectId)
     response.json({ snapshots: await listProjectSnapshots(user.uid, projectId) })
   } catch (cause) {
     httpError(response, cause)
@@ -327,7 +327,7 @@ export const projectSnapshotFiles = onRequest({ region: 'us-central1', cors: fal
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
   try {
     const user = await requireFirebaseUser(request)
-    const input = snapshotFilesSchema.parse(request.query)
+    const input = snapshotFilesSchema.parse({ ...request.query, ...request.params })
     response.json(await loadSnapshotFiles(user.uid, input.projectId, input.snapshotId))
   } catch (cause) {
     httpError(response, cause)
@@ -366,7 +366,7 @@ export const projectState = onRequest({ region: 'us-central1', cors: false }, as
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
   try {
     const user = await requireFirebaseUser(request)
-    const projectId = z.string().trim().min(1).max(128).parse(request.query.projectId)
+    const projectId = z.string().trim().min(1).max(128).parse(request.params.projectId ?? request.query.projectId)
     response.json(await loadProjectState(user.uid, projectId))
   } catch (cause) {
     httpError(response, cause)
@@ -550,8 +550,8 @@ export const apiV1 = onRequest(
       return void response.status(404).json({ title: 'API resource not found', status: 404 })
     }
 
-    if (request.method === 'GET') Object.assign(request.query, route.params)
-    else request.body = { ...(request.body ?? {}), ...route.params }
+    request.params = { ...request.params, ...route.params }
+    if (request.method !== 'GET') request.body = { ...(request.body ?? {}), ...route.params }
     await apiV1Handlers[route.target](request, response)
   },
 )
