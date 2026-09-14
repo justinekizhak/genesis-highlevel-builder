@@ -123,7 +123,7 @@ async function signOut() {
     <header class="dashboard-nav">
       <div class="auth-brand"><span><IconBraces :size="18" /></span><strong>Genesis</strong></div>
       <div class="dashboard-account">
-        <Button variant="ghost" size="icon" aria-label="Webhook activity" title="Webhook activity" @click="router.push('/events')"><IconWebhook :size="17" /></Button>
+        <Button variant="ghost" aria-label="Webhook activity" title="Webhook activity" @click="router.push('/events')"><IconWebhook :size="17" />Webhook Events</Button>
         <span>{{ auth.user?.email }}</span>
         <Button variant="ghost" size="icon" aria-label="Sign out" @click="signOut"><IconLogout :size="17" /></Button>
       </div>
