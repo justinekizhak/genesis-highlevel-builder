@@ -1,0 +1,442 @@
+openapi: 3.1.0
+info:
+  title: Genesis API
+  version: 1.0.0
+  summary: Authenticated application-generation and HighLevel integration API.
+  description: |
+    The browser sends a Firebase ID token in the Bearer authorization header. All project
+    resources are owner-scoped on the server. Generation responses use Server-Sent Events (SSE).
+    The named Cloud Function endpoints are deprecated compatibility aliases; new clients should
+    use the versioned resource paths in this contract.
+  contact:
+    name: Genesis engineering
+servers:
+  - url: https://jk-ai-app-builder.web.app/api
+    description: Production
+  - url: http://127.0.0.1:5001/jk-ai-app-builder/us-central1/apiV1
+    description: Firebase Functions emulator (v1 paths only)
+tags:
+  - name: System
+  - name: Generations
+  - name: Projects
+  - name: Snapshots
+  - name: Integrations
+security:
+  - firebaseBearer: []
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      tags: [System]
+      summary: Check API health
+      security: []
+      responses:
+        '200':
+          description: Service is available.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /v1/projects/{projectId}/generations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      operationId: createGeneration
+      tags: [Generations]
+      summary: Generate or refine the project's application
+      description: |
+        Starts one generation for the project. Only one generation may hold the project lock.
+        The response is an SSE stream; comment frames are heartbeats and may be ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGeneration' }
+      responses:
+        '200':
+          description: SSE event stream. Terminal application events are `complete` or `error`.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                examples:
+                  - "event: generation_started\ndata: {\"type\":\"generation_started\",\"generationId\":\"550e8400-e29b-41d4-a716-446655440000\",\"provider\":\"openai\",\"model\":\"gpt-5.4-mini\"}\n\n"
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /v1/projects/{projectId}/generations/{generationId}/cancellation:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/GenerationId'
+    post:
+      operationId: createGenerationCancellation
+      tags: [Generations]
+      summary: Request cancellation of an active generation
+      responses:
+        '200':
+          description: Cancellation was recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: { type: string, enum: [cancel_requested, not_running] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/application:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: getProjectApplication
+      tags: [Projects]
+      summary: Get current files and recent generation messages
+      responses:
+        '200':
+          description: Current project application state.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApplicationState' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/files:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    put:
+      operationId: replaceProjectFiles
+      tags: [Projects]
+      summary: Replace the supplied editable project files
+      description: A successful manual save also creates a restorable snapshot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files]
+              additionalProperties: false
+              properties:
+                files: { $ref: '#/components/schemas/Files' }
+      responses:
+        '200':
+          description: Files saved.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { const: true }
+                  snapshotId: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/snapshots:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listProjectSnapshots
+      tags: [Snapshots]
+      summary: List the 50 most recent snapshots
+      responses:
+        '200':
+          description: Snapshot metadata in reverse chronological order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshots]
+                properties:
+                  snapshots:
+                    type: array
+                    items: { $ref: '#/components/schemas/Snapshot' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/snapshots/{snapshotId}/files:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/SnapshotId'
+    get:
+      operationId: getSnapshotFiles
+      tags: [Snapshots]
+      summary: Get the immutable files stored in a snapshot
+      responses:
+        '200':
+          description: Snapshot files.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files]
+                properties:
+                  files: { $ref: '#/components/schemas/Files' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/snapshots/{snapshotId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/SnapshotId'
+    patch:
+      operationId: updateSnapshotMetadata
+      tags: [Snapshots]
+      summary: Update one editable snapshot metadata field
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [field, value]
+              additionalProperties: false
+              properties:
+                field: { type: string, enum: [message, description] }
+                value: { type: string, maxLength: 2000 }
+      responses:
+        '200':
+          description: Updated metadata.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, field, value]
+                properties:
+                  id: { type: string }
+                  field: { type: string }
+                  value: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/snapshots/{snapshotId}/restorations:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/SnapshotId'
+    post:
+      operationId: createSnapshotRestoration
+      tags: [Snapshots]
+      summary: Restore a snapshot and preserve the current files as a backup
+      responses:
+        '200':
+          description: Restored files and the optional pre-restore backup snapshot.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [snapshotId, files]
+                properties:
+                  snapshotId: { type: string }
+                  backupSnapshotId: { type: string }
+                  files: { $ref: '#/components/schemas/Files' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/integrations/status:
+    get:
+      operationId: getIntegrationStatus
+      tags: [Integrations]
+      summary: Get the user's AI and HighLevel readiness
+      responses:
+        '200':
+          description: Integration readiness without any secret values.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IntegrationStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/integrations/highlevel/connection:
+    get:
+      operationId: getHighLevelConnection
+      tags: [Integrations]
+      summary: Get the current user's HighLevel connection summary
+      responses:
+        '200':
+          description: Connection metadata; OAuth tokens are never returned.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HighLevelConnection' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/integrations/highlevel/authorizations:
+    post:
+      operationId: createHighLevelAuthorization
+      tags: [Integrations]
+      summary: Create a short-lived OAuth authorization request
+      responses:
+        '200':
+          description: URL to the HighLevel location chooser.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [authorizationUrl]
+                properties:
+                  authorizationUrl: { type: string, format: uri }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/integrations/highlevel/proxy-requests:
+    post:
+      operationId: createHighLevelProxyRequest
+      tags: [Integrations]
+      summary: Execute one allowlisted HighLevel operation
+      description: The server supplies the location and OAuth token; neither is accepted from the client.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HighLevelProxyRequest' }
+      responses:
+        '200':
+          description: HighLevel response payload.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: {}
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+components:
+  securitySchemes:
+    firebaseBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Firebase ID token
+      description: Firebase ID token obtained by the signed-in web client.
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+    GenerationId:
+      name: generationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    SnapshotId:
+      name: snapshotId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
+  responses:
+    BadRequest:
+      description: Request validation or business precondition failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Firebase session is absent, expired, revoked, or invalid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Another generation currently owns the project lock.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Per-user fixed-window rate limit exceeded.
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      additionalProperties: false
+      properties:
+        error: { type: string }
+    Health:
+      type: object
+      required: [status, service, timestamp]
+      properties:
+        status: { const: ok }
+        service: { const: genesis-functions }
+        timestamp: { type: string, format: date-time }
+    CreateGeneration:
+      type: object
+      required: [prompt, generationId, model]
+      additionalProperties: false
+      properties:
+        prompt: { type: string, minLength: 3, maxLength: 4000 }
+        generationId: { type: string, format: uuid }
+        model: { type: string, enum: [gpt-5.4, gpt-5.4-mini, gpt-5.4-nano] }
+    Files:
+      type: object
+      additionalProperties: false
+      properties:
+        index.html: { type: string, maxLength: 100000 }
+        styles.css: { type: string, maxLength: 100000 }
+        app.js: { type: string, maxLength: 100000 }
+    ChatMessage:
+      type: object
+      required: [id, role, content]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+    ApplicationState:
+      type: object
+      required: [files, messages]
+      properties:
+        snapshotId: { type: string }
+        files:
+          oneOf:
+            - { $ref: '#/components/schemas/Files' }
+            - { type: 'null' }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChatMessage' }
+    Snapshot:
+      type: object
+      required: [id, prompt, summary, provider, kind, fileCount, createdAt]
+      properties:
+        id: { type: string }
+        generationId: { type: string }
+        prompt: { type: string }
+        summary: { type: string }
+        label: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        kind: { type: string, enum: [generation, manual, partial, restore-backup] }
+        fileCount: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+    HighLevelConnection:
+      type: object
+      required: [connected]
+      properties:
+        connected: { type: boolean }
+        locationId: { type: string }
+        locationName: { type: string }
+        connectedAt: { type: string, format: date-time }
+    IntegrationStatus:
+      type: object
+      required: [llm, highLevel]
+      properties:
+        llm:
+          type: object
+          required: [configured, model, availableModels]
+          properties:
+            configured: { type: boolean }
+            model: { type: string }
+            availableModels: { type: array, items: { type: string } }
+        highLevel: { $ref: '#/components/schemas/HighLevelConnection' }
+    HighLevelProxyRequest:
+      type: object
+      required: [operation]
+      additionalProperties: false
+      properties:
+        operation:
+          type: string
+          enum:
+            - contacts.list
+            - contacts.create
+            - contacts.update
+            - conversations.list
+            - conversations.messages
+            - conversations.send
+            - calendars.list
+            - calendars.availability
+            - appointments.list
+        parameters:
+          type: object
+          maxProperties: 40
+          additionalProperties:
+            oneOf:
+              - { type: string, maxLength: 5000 }
+              - { type: number }
+              - { type: boolean }
+              - { type: array, maxItems: 20, items: { type: string, maxLength: 500 } }

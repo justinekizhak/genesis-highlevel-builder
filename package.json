@@ -10,6 +10,7 @@
     "test:ui": "pnpm --dir frontend test:ui",
     "dev:frontend": "pnpm --dir frontend dev",
     "dev:emulators": "sh scripts/run-emulators.sh",
+    "docs:diagrams": "node scripts/generate-doc-diagrams.mjs",
     "emulators:export": "pnpm dlx firebase-tools emulators:export .firebase/emulator-data --project jk-ai-app-builder --force",
     "deploy": "pnpm dlx firebase-tools deploy --project jk-ai-app-builder"
   }

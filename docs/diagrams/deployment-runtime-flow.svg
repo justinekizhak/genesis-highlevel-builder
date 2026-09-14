@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Build, Deploy, and Runtime Configuration</title>
+  <desc id="desc">High-level Genesis diagram. Editable Excalidraw source is stored beside this SVG.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="context-stroke"/></marker>
+    <filter id="rough" x="-5%" y="-7%" width="110%" height="114%"><feTurbulence type="fractalNoise" baseFrequency="0.025 0.12" numOctaves="2" seed="41" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.7"/></filter>
+    <filter id="rough-line" x="-8%" y="-12%" width="116%" height="124%"><feTurbulence type="fractalNoise" baseFrequency="0.04 0.18" numOctaves="2" seed="17" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2"/></filter>
+    <style>.heading{font:700 30px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-title{font:700 17px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-body{font:14px "Marker Felt","Comic Sans MS",cursive;fill:#495057}.edge-label{font:700 13px "Marker Felt","Comic Sans MS",cursive}</style>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="40" y="51" class="heading">Build, Deploy, and Runtime Configuration</text>
+  <path d="M35 70 Q 600 66 1165 70" stroke="#1e1e1e" stroke-width="1" opacity=".22" fill="none" filter="url(#rough-line)"/>
+  <g><path d="M 260 165 Q 290.5 161 315 165" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 535 165 Q 570.5 161 600 165" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 688 230 Q 691 268.5 688 315" fill="none" stroke="#c92a2a" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="630" y="256.5" width="116" height="23" rx="3" fill="#ffffff"/><text x="688" y="273.5" text-anchor="middle" class="edge-label" fill="#c92a2a">no</text></g>
+<g><path d="M 775 165 Q 815.5 161 850 165" fill="none" stroke="#2b8a3e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="754.5" y="149" width="116" height="23" rx="3" fill="#ffffff"/><text x="812.5" y="166" text-anchor="middle" class="edge-label" fill="#2b8a3e">yes · push</text></g>
+<g><path d="M 978 220 Q 981 271 978 330" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 745 565 Q 800.5 478.5 850 400" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="739.5" y="466.5" width="116" height="23" rx="3" fill="#ffffff"/><text x="797.5" y="483.5" text-anchor="middle" class="edge-label" fill="#495057">runtime config</text></g>
+<g><path d="M 978 450 Q 981 483.5 978 525" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+  <g><rect x="40" y="115" width="220" height="100" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="150" y="147" text-anchor="middle" class="node-title">Developer</text><text x="150" y="176" text-anchor="middle" class="node-body">Pull request or push</text>
+<text x="150" y="195" text-anchor="middle" class="node-body">to main</text></g>
+<g><rect x="315" y="115" width="220" height="100" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="425" y="147" text-anchor="middle" class="node-title">GitHub Actions</text><text x="425" y="176" text-anchor="middle" class="node-body">Install dependencies</text>
+<text x="425" y="195" text-anchor="middle" class="node-body">Build · test</text></g>
+<g><polygon points="687.5,100 775,165 687.5,230 600,165" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="687.5" y="171" text-anchor="middle" class="node-title">Checks pass?</text></g>
+<g><rect x="598" y="315" width="180" height="85" rx="9" fill="#ffe3e3" stroke="#c92a2a" stroke-width="2.2" filter="url(#rough)"/><text x="688" y="347" text-anchor="middle" class="node-title">Stop</text><text x="688" y="376" text-anchor="middle" class="node-body">No deployment</text></g>
+<g><rect x="850" y="115" width="255" height="105" rx="9" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="977.5" y="147" text-anchor="middle" class="node-title">Production identity</text><text x="977.5" y="176" text-anchor="middle" class="node-body">Short-lived Google access</text>
+<text x="977.5" y="195" text-anchor="middle" class="node-body">through Workload Identity</text></g>
+<g><rect x="850" y="330" width="255" height="120" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="977.5" y="362" text-anchor="middle" class="node-title">Firebase deploy</text><text x="977.5" y="391" text-anchor="middle" class="node-body">Hosting · Functions</text>
+<text x="977.5" y="410" text-anchor="middle" class="node-body">Rules + indexes</text></g>
+<g><rect x="470" y="515" width="275" height="105" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="607.5" y="547" text-anchor="middle" class="node-title">Runtime configuration</text><text x="607.5" y="576" text-anchor="middle" class="node-body">Secret Manager holds keys</text>
+<text x="607.5" y="595" text-anchor="middle" class="node-body">Environment holds non-secrets</text></g>
+<g><rect x="850" y="525" width="255" height="105" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="977.5" y="557" text-anchor="middle" class="node-title">Post-deploy checks</text><text x="977.5" y="586" text-anchor="middle" class="node-body">Open hosting URL</text>
+<text x="977.5" y="605" text-anchor="middle" class="node-body">Verify /api/healthz</text></g>
+<g><rect x="40" y="430" width="285" height="130" rx="9" fill="#f1f3f5" stroke="#495057" stroke-width="2.2" filter="url(#rough)"/><text x="182.5" y="462" text-anchor="middle" class="node-title">Local development</text><text x="182.5" y="491" text-anchor="middle" class="node-body">Vite frontend</text>
+<text x="182.5" y="510" text-anchor="middle" class="node-body">Firebase emulators</text>
+<text x="182.5" y="529" text-anchor="middle" class="node-body">Real external integrations</text></g>
+</svg>

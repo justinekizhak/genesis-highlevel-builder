@@ -18,3 +18,5 @@ frontend/.env.*
 functions/lib/
 functions/.secret.local
 work/
+frontend/test-results/
+frontend/playwright-report/

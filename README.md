@@ -9,6 +9,11 @@ HighLevel isn't connected, Genesis won't generate — that's enforced both in th
 
 ## Reviewing this submission? Start here
 
+New to the codebase? Begin with the [backend high-level design and Excalidraw walkthrough](docs/BACKEND_HLD.md).
+
+- API contract: [`docs/openapi.yaml`](docs/openapi.yaml) and [`docs/API.md`](docs/API.md)
+- Security assessment: [`docs/SECURITY.md`](docs/SECURITY.md)
+
 | Requirement | Where | Proof in 30 seconds |
 |---|---|---|
 | Email/password auth + session persistence | [`views/AuthView.vue`](frontend/src/views/AuthView.vue), [`stores/auth.ts`](frontend/src/stores/auth.ts) | Sign in, refresh the page |
@@ -66,7 +71,10 @@ open the frontend at `http://127.0.0.1:5173` so Firebase Auth remains on the sam
 ```bash
 pnpm run build
 pnpm run test
+pnpm run test:ui
 ```
+
+The API uses versioned REST resource paths under `/api/v1`. The previous named Cloud Function URLs remain as compatibility aliases; the frontend and OpenAPI contract use `/api/v1`.
 
 ## Live URLs
 

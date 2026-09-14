@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="690" viewBox="0 0 1200 690" role="img" aria-labelledby="title desc">
+  <title id="title">Generated App to Real HighLevel Data</title>
+  <desc id="desc">High-level Genesis diagram. Editable Excalidraw source is stored beside this SVG.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="context-stroke"/></marker>
+    <filter id="rough" x="-5%" y="-7%" width="110%" height="114%"><feTurbulence type="fractalNoise" baseFrequency="0.025 0.12" numOctaves="2" seed="41" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.7"/></filter>
+    <filter id="rough-line" x="-8%" y="-12%" width="116%" height="124%"><feTurbulence type="fractalNoise" baseFrequency="0.04 0.18" numOctaves="2" seed="17" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2"/></filter>
+    <style>.heading{font:700 30px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-title{font:700 17px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-body{font:14px "Marker Felt","Comic Sans MS",cursive;fill:#495057}.edge-label{font:700 13px "Marker Felt","Comic Sans MS",cursive}</style>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="40" y="51" class="heading">Generated App to Real HighLevel Data</text>
+  <path d="M35 70 Q 600 66 1165 70" stroke="#1e1e1e" stroke-width="1" opacity=".22" fill="none" filter="url(#rough-line)"/>
+  <g><path d="M 260 177 Q 290.5 173 315 177" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 535 177 Q 565.5 173 590 177" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="504.5" y="161" width="116" height="23" rx="3" fill="#ffffff"/><text x="562.5" y="178" text-anchor="middle" class="edge-label" fill="#495057">postMessage</text></g>
+<g><path d="M 825 182 Q 855.5 178 880 182" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="794.5" y="166" width="116" height="23" rx="3" fill="#ffffff"/><text x="852.5" y="183" text-anchor="middle" class="edge-label" fill="#495057">HTTPS</text></g>
+<g><path d="M 1002 245 Q 1005 288.5 1002 340" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 880 395 Q 855.5 391 825 395" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 590 395 Q 565.5 391 535 395" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 315 395 Q 290.5 391 260 395" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="229.5" y="379" width="116" height="23" rx="3" fill="#ffffff"/><text x="287.5" y="396" text-anchor="middle" class="edge-label" fill="#495057">JSON result</text></g>
+  <g><rect x="40" y="120" width="220" height="115" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="150" y="152" text-anchor="middle" class="node-title">User action</text><text x="150" y="181" text-anchor="middle" class="node-body">Search contacts</text>
+<text x="150" y="200" text-anchor="middle" class="node-body">Load appointments</text>
+<text x="150" y="219" text-anchor="middle" class="node-body">Send a message</text></g>
+<g><rect x="315" y="120" width="220" height="115" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="425" y="152" text-anchor="middle" class="node-title">Generated iframe</text><text x="425" y="181" text-anchor="middle" class="node-body">Calls only</text>
+<text x="425" y="200" text-anchor="middle" class="node-body">window.genesis.highlevel</text></g>
+<g><rect x="590" y="120" width="235" height="125" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="707.5" y="152" text-anchor="middle" class="node-title">Host bridge</text><text x="707.5" y="181" text-anchor="middle" class="node-body">Check message source</text>
+<text x="707.5" y="200" text-anchor="middle" class="node-body">Check operation name</text>
+<text x="707.5" y="219" text-anchor="middle" class="node-body">Attach Firebase ID token</text></g>
+<g><rect x="880" y="120" width="245" height="125" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1002.5" y="152" text-anchor="middle" class="node-title">hlProxy Function</text><text x="1002.5" y="181" text-anchor="middle" class="node-body">Authenticate user</text>
+<text x="1002.5" y="200" text-anchor="middle" class="node-body">60 requests/minute</text>
+<text x="1002.5" y="219" text-anchor="middle" class="node-body">Validate request shape</text></g>
+<g><rect x="880" y="340" width="245" height="110" rx="9" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="1002.5" y="372" text-anchor="middle" class="node-title">Operation allowlist</text><text x="1002.5" y="401" text-anchor="middle" class="node-body">Contacts · conversations</text>
+<text x="1002.5" y="420" text-anchor="middle" class="node-body">Calendars · appointments</text></g>
+<g><rect x="590" y="340" width="235" height="110" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="707.5" y="372" text-anchor="middle" class="node-title">Connection resolver</text><text x="707.5" y="401" text-anchor="middle" class="node-body">Load or refresh token</text>
+<text x="707.5" y="420" text-anchor="middle" class="node-body">Inject user location ID</text></g>
+<g><rect x="315" y="340" width="220" height="110" rx="9" fill="#c5f6fa" stroke="#0b7285" stroke-width="2.2" filter="url(#rough)"/><text x="425" y="372" text-anchor="middle" class="node-title">HighLevel API</text><text x="425" y="401" text-anchor="middle" class="node-body">Execute one approved call</text></g>
+<g><rect x="40" y="340" width="220" height="110" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="150" y="372" text-anchor="middle" class="node-title">Preview result</text><text x="150" y="401" text-anchor="middle" class="node-body">Render real CRM data</text>
+<text x="150" y="420" text-anchor="middle" class="node-body">or a visible error</text></g>
+<g><rect x="330" y="555" width="555" height="90" rx="9" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="607.5" y="587" text-anchor="middle" class="node-title">Trust boundary</text><text x="607.5" y="616" text-anchor="middle" class="node-body">No direct network · no OAuth tokens · no arbitrary endpoints · no demo fallback</text></g>
+</svg>
