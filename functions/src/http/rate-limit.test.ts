@@ -64,4 +64,20 @@ describe('enforceRateLimit', () => {
     await expect(enforceRateLimit('user-2', 'generate-day', 1, 86_400)).rejects.toThrow('1440 min')
     vi.doUnmock('firebase-admin/firestore')
   })
+
+  it('provides a bounded Retry-After value', async () => {
+    vi.resetModules()
+    const firestore = makeFakeFirestore()
+    vi.doMock('firebase-admin/firestore', async () => {
+      const actual = await vi.importActual<typeof import('firebase-admin/firestore')>('firebase-admin/firestore')
+      return { ...actual, getFirestore: () => firestore }
+    })
+    const { enforceRateLimit, RateLimitError } = await import('./rate-limit.js')
+    await enforceRateLimit('user-3', 'proxy-minute', 1, 60)
+    const error = await enforceRateLimit('user-3', 'proxy-minute', 1, 60).catch((cause) => cause)
+    expect(error).toBeInstanceOf(RateLimitError)
+    expect(error.retryAfterSeconds).toBeGreaterThanOrEqual(1)
+    expect(error.retryAfterSeconds).toBeLessThanOrEqual(60)
+    vi.doUnmock('firebase-admin/firestore')
+  })
 })

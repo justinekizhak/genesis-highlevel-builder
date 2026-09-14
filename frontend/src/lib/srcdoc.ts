@@ -18,7 +18,7 @@ function buildHighLevelBridge(broadcastChannelName?: string, directProxy?: { fun
   const broadcast = !directProxy && !bridgeHost && broadcastChannelName && 'BroadcastChannel' in window
     ? new BroadcastChannel(broadcastChannelName)
     : null;
-  const invokeDirect = (operation, parameters) => fetch(directProxy.functionsBase + '/hlProxy', {
+  const invokeDirect = (operation, parameters) => fetch(directProxy.functionsBase + '/integrations/highlevel/proxy-requests', {
     method: 'POST',
     headers: { Authorization: 'Bearer ' + directProxy.idToken, 'Content-Type': 'application/json' },
     body: JSON.stringify({ operation, parameters }),

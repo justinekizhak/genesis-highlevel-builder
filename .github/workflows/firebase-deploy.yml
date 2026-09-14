@@ -42,11 +42,22 @@ jobs:
       - name: Install Functions dependencies
         run: pnpm --dir functions install --frozen-lockfile
 
+      - name: Audit production dependencies
+        run: |
+          pnpm --dir frontend audit --prod
+          pnpm --dir functions audit --prod
+
       - name: Build
         run: pnpm run build
 
       - name: Test
         run: pnpm run test
+
+      - name: Install Chromium for UI tests
+        run: pnpm --dir frontend exec playwright install --with-deps chromium
+
+      - name: Run UI smoke tests
+        run: pnpm run test:ui
 
   deploy:
     name: Deploy production

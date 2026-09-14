@@ -1,4 +1,5 @@
 import type { ChatMessage, GeneratedFile, GenerationEvent, GenerationModel, ProjectSnapshot } from '@/types/generation'
+import { requireApiV1BaseUrl, requireStreamingApiV1BaseUrl } from './api'
 
 type GenerateOptions = {
   prompt: string
@@ -51,25 +52,10 @@ export async function consumeGenerationStream(response: Response, onEvent: (even
   if (!sawTerminal) throw new Error('Generation stream ended before completion. Partial output has been preserved.')
 }
 
-function requireFunctionsBaseUrl() {
-  const baseUrl = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
-  if (!baseUrl) throw new Error('Firebase Functions are not configured. Set VITE_FUNCTIONS_BASE_URL.')
-  return baseUrl
-}
-
 // Firebase Hosting buffers the entire response body for rewrites to Cloud Functions/Cloud Run,
 // which defeats SSE streaming even though the function itself flushes incrementally. Only the
 // streaming generateApp call needs to bypass Hosting and hit the Cloud Function directly; every
 // other endpoint here is a normal request/response and can keep going through the /api rewrite.
-function requireStreamingFunctionsBaseUrl() {
-  const override = import.meta.env.VITE_FUNCTIONS_STREAM_BASE_URL?.replace(/\/$/, '')
-  if (override) return override
-  if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') return requireFunctionsBaseUrl()
-  const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID
-  if (!projectId) return requireFunctionsBaseUrl()
-  return `https://us-central1-${projectId}.cloudfunctions.net`
-}
-
 const generationLockRetryDelays = [150, 250, 400, 650, 1_000, 1_500]
 
 function waitForGenerationLock(delay: number, signal: AbortSignal) {
@@ -91,15 +77,14 @@ function waitForGenerationLock(delay: number, signal: AbortSignal) {
 }
 
 export async function generateApplication(options: GenerateOptions) {
-  const baseUrl = requireStreamingFunctionsBaseUrl()
+  const baseUrl = requireStreamingApiV1BaseUrl()
   if (!options.idToken) throw new Error('Sign in again before generating.')
   for (let attempt = 0; ; attempt += 1) {
-    const response = await fetch(`${baseUrl}/generateApp`, {
+    const response = await fetch(`${baseUrl}/projects/${encodeURIComponent(options.projectId)}/generations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${options.idToken}` },
       body: JSON.stringify({
         prompt: options.prompt,
-        projectId: options.projectId,
         generationId: options.generationId,
         model: options.model,
       }),
@@ -121,9 +106,9 @@ export async function generateApplication(options: GenerateOptions) {
 
 export async function cancelApplicationGeneration(projectId: string, generationId: string, idToken?: string) {
   if (!idToken) throw new Error('Sign in again to stop this generation.')
-  return authenticatedRequest<{ status: 'cancel_requested' | 'not_running' }>('cancelGeneration', idToken, {
+  return authenticatedRequest<{ status: 'cancel_requested' | 'not_running' }>(`projects/${encodeURIComponent(projectId)}/generations/${encodeURIComponent(generationId)}/cancellation`, idToken, {
     method: 'POST',
-    body: JSON.stringify({ projectId, generationId }),
+    body: '{}',
   })
 }
 
@@ -134,7 +119,7 @@ export type ProjectApplicationState = {
 }
 
 async function authenticatedRequest<T>(path: string, idToken: string, init?: RequestInit): Promise<T> {
-  const baseUrl = requireFunctionsBaseUrl()
+  const baseUrl = requireApiV1BaseUrl()
   const response = await fetch(`${baseUrl}/${path}`, {
     ...init,
     headers: { Authorization: `Bearer ${idToken}`, 'Content-Type': 'application/json', ...init?.headers },
@@ -145,11 +130,9 @@ async function authenticatedRequest<T>(path: string, idToken: string, init?: Req
 }
 
 export async function loadApplicationState(projectId: string, idToken?: string): Promise<ProjectApplicationState | null> {
-  requireFunctionsBaseUrl()
   if (!idToken) throw new Error('Sign in again to load this project.')
-  const baseUrl = requireFunctionsBaseUrl()
-  const url = new URL(`${baseUrl}/projectState`)
-  url.searchParams.set('projectId', projectId)
+  const baseUrl = requireApiV1BaseUrl()
+  const url = new URL(`${baseUrl}/projects/${encodeURIComponent(projectId)}/application`)
   const response = await fetch(url, { headers: { Authorization: `Bearer ${idToken}` } })
   if (!response.ok) throw new Error(`Could not load project state (${response.status})`)
   return response.json() as Promise<ProjectApplicationState>
@@ -158,24 +141,22 @@ export async function loadApplicationState(projectId: string, idToken?: string):
 export async function saveApplicationFiles(projectId: string, files: Record<string, GeneratedFile>, idToken?: string) {
   const stateFiles = Object.fromEntries(Object.entries(files).map(([path, file]) => [path, file.content]))
   if (!idToken) throw new Error('Sign in again to save files.')
-  const result = await authenticatedRequest<{ ok: true; snapshotId?: string }>('saveFiles', idToken, {
-    method: 'POST',
-    body: JSON.stringify({ projectId, files: stateFiles }),
+  const result = await authenticatedRequest<{ ok: true; snapshotId?: string }>(`projects/${encodeURIComponent(projectId)}/files`, idToken, {
+    method: 'PUT',
+    body: JSON.stringify({ files: stateFiles }),
   })
   return { files: stateFiles, snapshotId: result.snapshotId }
 }
 
 export async function listApplicationSnapshots(projectId: string, idToken?: string): Promise<ProjectSnapshot[]> {
   if (!idToken) throw new Error('Sign in again to load snapshots.')
-  const query = new URLSearchParams({ projectId })
-  const result = await authenticatedRequest<{ snapshots: ProjectSnapshot[] }>(`projectSnapshots?${query}`, idToken)
+  const result = await authenticatedRequest<{ snapshots: ProjectSnapshot[] }>(`projects/${encodeURIComponent(projectId)}/snapshots`, idToken)
   return result.snapshots
 }
 
 export async function loadSnapshotFiles(projectId: string, snapshotId: string, idToken?: string): Promise<Record<string, string>> {
   if (!idToken) throw new Error('Sign in again to load this snapshot.')
-  const query = new URLSearchParams({ projectId, snapshotId })
-  const result = await authenticatedRequest<{ files: Record<string, string> }>(`projectSnapshotFiles?${query}`, idToken)
+  const result = await authenticatedRequest<{ files: Record<string, string> }>(`projects/${encodeURIComponent(projectId)}/snapshots/${encodeURIComponent(snapshotId)}/files`, idToken)
   return result.files
 }
 
@@ -187,16 +168,16 @@ export async function updateSnapshotField(
   idToken?: string,
 ) {
   if (!idToken) throw new Error('Sign in again to edit this snapshot.')
-  return authenticatedRequest<{ id: string; field: string; value: string }>('updateSnapshot', idToken, {
-    method: 'POST',
-    body: JSON.stringify({ projectId, snapshotId, field, value }),
+  return authenticatedRequest<{ id: string; field: string; value: string }>(`projects/${encodeURIComponent(projectId)}/snapshots/${encodeURIComponent(snapshotId)}`, idToken, {
+    method: 'PATCH',
+    body: JSON.stringify({ field, value }),
   })
 }
 
 export async function restoreApplicationSnapshot(projectId: string, snapshotId: string, idToken?: string) {
   if (!idToken) throw new Error('Sign in again to restore a snapshot.')
-  return authenticatedRequest<{ snapshotId: string; files: Record<string, string>; backupSnapshotId?: string }>('restoreSnapshot', idToken, {
+  return authenticatedRequest<{ snapshotId: string; files: Record<string, string>; backupSnapshotId?: string }>(`projects/${encodeURIComponent(projectId)}/snapshots/${encodeURIComponent(snapshotId)}/restorations`, idToken, {
     method: 'POST',
-    body: JSON.stringify({ projectId, snapshotId }),
+    body: '{}',
   })
 }

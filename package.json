@@ -7,6 +7,7 @@
     "install:all": "pnpm --dir frontend install && pnpm --dir functions install",
     "build": "pnpm --dir frontend build && pnpm --dir functions build",
     "test": "pnpm --dir frontend test && pnpm --dir functions test",
+    "test:ui": "pnpm --dir frontend test:ui",
     "dev:frontend": "pnpm --dir frontend dev",
     "dev:emulators": "sh scripts/run-emulators.sh",
     "emulators:export": "pnpm dlx firebase-tools emulators:export .firebase/emulator-data --project jk-ai-app-builder --force",

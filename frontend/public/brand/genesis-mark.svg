@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">Genesis app icon</title>
+  <desc id="description">A gold pair of code braces framing a spark on a charcoal background.</desc>
+  <rect width="1024" height="1024" rx="224" fill="#11110f"/>
+  <path d="M391 261c-83 0-128 46-128 132v45c0 45-19 66-62 74 43 8 62 29 62 74v45c0 86 45 132 128 132" fill="none" stroke="#f0eee7" stroke-width="72" stroke-linecap="round"/>
+  <path d="M633 261c83 0 128 46 128 132v45c0 45 19 66 62 74-43 8-62 29-62 74v45c0 86-45 132-128 132" fill="none" stroke="#f0eee7" stroke-width="72" stroke-linecap="round"/>
+  <path d="M512 330l39 113 113 39-113 39-39 113-39-113-113-39 113-39 39-113z" fill="#dfb85f"/>
+</svg>

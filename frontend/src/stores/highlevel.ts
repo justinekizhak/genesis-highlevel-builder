@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { firebaseEnabled } from '@/services/firebase'
+import { requireApiV1BaseUrl } from '@/services/api'
 import type { HighLevelOperation, HighLevelParameters } from '@/types/highlevel'
 import { useAuthStore } from './auth'
 
@@ -27,8 +28,11 @@ export const useHighLevelStore = defineStore('highlevel', () => {
   const llm = ref<ModelStatus>({ configured: false, model: 'gpt-5.4-mini' })
   const loading = ref(false)
   const error = ref('')
-  const functionsBase = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
-  const canConnect = computed(() => firebaseEnabled && Boolean(functionsBase))
+  const configuredFunctionsBase = import.meta.env.VITE_FUNCTIONS_BASE_URL?.replace(/\/$/, '')
+  const functionsBase = (() => {
+    try { return requireApiV1BaseUrl() } catch { return undefined }
+  })()
+  const canConnect = computed(() => firebaseEnabled && Boolean(configuredFunctionsBase))
 
   async function request(path: string, init?: RequestInit) {
     const auth = useAuthStore()
@@ -60,7 +64,7 @@ export const useHighLevelStore = defineStore('highlevel', () => {
     loading.value = true
     error.value = ''
     try {
-      const status = await request('integrationStatus') as IntegrationStatus
+      const status = await request('integrations/status') as IntegrationStatus
       connection.value = status.highLevel
       llm.value = status.llm
     } catch (cause) {
@@ -74,7 +78,7 @@ export const useHighLevelStore = defineStore('highlevel', () => {
     loading.value = true
     error.value = ''
     try {
-      const result = await request('hlOAuthStart', { method: 'POST', body: '{}' }) as { authorizationUrl: string }
+      const result = await request('integrations/highlevel/authorizations', { method: 'POST', body: '{}' }) as { authorizationUrl: string }
       window.location.assign(result.authorizationUrl)
     } catch (cause) {
       error.value = cause instanceof Error ? cause.message : 'Could not start HighLevel OAuth.'
@@ -83,7 +87,7 @@ export const useHighLevelStore = defineStore('highlevel', () => {
   }
 
   async function execute(operation: HighLevelOperation, parameters: HighLevelParameters = {}) {
-    const result = await request('hlProxy', {
+    const result = await request('integrations/highlevel/proxy-requests', {
       method: 'POST',
       body: JSON.stringify({ operation, parameters }),
     }) as { data: unknown }

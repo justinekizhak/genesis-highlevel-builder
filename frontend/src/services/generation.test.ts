@@ -61,7 +61,7 @@ describe('generateApplication', () => {
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock).toHaveBeenLastCalledWith(expect.any(String), expect.objectContaining({
+    expect(fetchMock).toHaveBeenLastCalledWith(expect.stringContaining('/apiV1/v1/projects/project-1/generations'), expect.objectContaining({
       body: expect.stringContaining('"model":"gpt-5.4"'),
     }))
     expect(events).toEqual([{ type: 'complete', generationId: 'g1' }])

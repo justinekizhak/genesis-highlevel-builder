@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" role="img" aria-labelledby="title description">
+  <title id="title">Genesis wordmark</title>
+  <desc id="description">Genesis code-brace mark and wordmark in charcoal and gold.</desc>
+  <rect width="1280" height="320" rx="48" fill="#11110f"/>
+  <g transform="translate(42 42) scale(.23)">
+    <path d="M391 261c-83 0-128 46-128 132v45c0 45-19 66-62 74 43 8 62 29 62 74v45c0 86 45 132 128 132" fill="none" stroke="#f0eee7" stroke-width="72" stroke-linecap="round"/>
+    <path d="M633 261c83 0 128 46 128 132v45c0 45 19 66 62 74-43 8-62 29-62 74v45c0 86-45 132-128 132" fill="none" stroke="#f0eee7" stroke-width="72" stroke-linecap="round"/>
+    <path d="M512 330l39 113 113 39-113 39-39 113-39-113-113-39 113-39 39-113z" fill="#dfb85f"/>
+  </g>
+  <text x="320" y="208" fill="#f0eee7" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="144" font-weight="650" letter-spacing="-6">Genesis</text>
+  <circle cx="1138" cy="174" r="12" fill="#dfb85f"/>
+</svg>

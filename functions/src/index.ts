@@ -36,6 +36,7 @@ import {
 import { executeHighLevelOperation, highLevelOperations, type HighLevelOperation } from './highlevel/proxy.js'
 import { exchangeAuthorizationCode, fetchLocationName, getConnectionSummary, saveConnection } from './highlevel/tokens.js'
 import { AuthenticationError, requireFirebaseUser } from './http/auth.js'
+import { allowedApiV1Methods, resolveApiV1Route, type ApiV1Target } from './http/api-v1.js'
 import { applyCors } from './http/cors.js'
 import { enforceRateLimit, RateLimitError } from './http/rate-limit.js'
 import { serializeSse } from './shared/protocol.js'
@@ -63,7 +64,7 @@ const proxyRequestSchema = z.object({
     z.array(z.string().max(500)).max(20),
     z.undefined(),
   ])).default({}),
-})
+}).strict()
 
 const projectFilesSchema = z.object({
   projectId: z.string().trim().min(1).max(128),
@@ -72,24 +73,24 @@ const projectFilesSchema = z.object({
     'styles.css': z.string().max(100_000).optional(),
     'app.js': z.string().max(100_000).optional(),
   }).strict(),
-})
+}).strict()
 
 const restoreSnapshotSchema = z.object({
   projectId: z.string().trim().min(1).max(128),
   snapshotId: z.string().trim().min(1).max(128),
-})
+}).strict()
 
 const snapshotFilesSchema = z.object({
   projectId: z.string().trim().min(1).max(128),
   snapshotId: z.string().trim().min(1).max(128),
-})
+}).strict()
 
 const updateSnapshotFieldSchema = z.object({
   projectId: z.string().trim().min(1).max(128),
   snapshotId: z.string().trim().min(1).max(128),
   field: z.enum(['message', 'description']),
   value: z.string().trim().max(2_000),
-})
+}).strict()
 
 function httpError(response: Parameters<typeof applyCors>[1], cause: unknown) {
   const message = cause instanceof Error ? cause.message : 'Unexpected server error.'
@@ -97,6 +98,7 @@ function httpError(response: Parameters<typeof applyCors>[1], cause: unknown) {
     : cause instanceof RateLimitError ? 429
     : cause instanceof GenerationLockedError ? 409
     : 400
+  if (cause instanceof RateLimitError) response.setHeader('Retry-After', String(cause.retryAfterSeconds))
   response.status(status).json({ error: message })
 }
 
@@ -308,7 +310,7 @@ export const projectSnapshots = onRequest({ region: 'us-central1', cors: false }
 export const saveFiles = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
-  if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
+  if (request.method !== 'POST' && request.method !== 'PUT') return void response.status(405).json({ error: 'Method not allowed' })
   try {
     const user = await requireFirebaseUser(request)
     const input = projectFilesSchema.parse(request.body)
@@ -335,7 +337,7 @@ export const projectSnapshotFiles = onRequest({ region: 'us-central1', cors: fal
 export const updateSnapshot = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
-  if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
+  if (request.method !== 'POST' && request.method !== 'PATCH') return void response.status(405).json({ error: 'Method not allowed' })
   try {
     const user = await requireFirebaseUser(request)
     const input = updateSnapshotFieldSchema.parse(request.body)
@@ -514,3 +516,42 @@ export const hlWebhook = onRequest({ region: 'us-central1', cors: false }, async
     response.status(200).json({ ok: true })
   }
 })
+
+const apiV1Handlers: Record<ApiV1Target, (request: Parameters<typeof healthz>[0], response: Parameters<typeof healthz>[1]) => unknown> = {
+  healthz,
+  generateApp,
+  cancelGeneration,
+  projectSnapshots,
+  projectSnapshotFiles,
+  saveFiles,
+  updateSnapshot,
+  restoreSnapshot,
+  projectState,
+  hlOAuthStart,
+  hlConnectionStatus,
+  integrationStatus,
+  hlProxy,
+}
+
+/** Versioned REST façade; named Functions remain available as compatibility aliases. */
+export const apiV1 = onRequest(
+  { region: 'us-central1', timeoutSeconds: 300, memory: '512MiB', cors: false, secrets: [openAiApiKey, highLevelClientSecret] },
+  async (request, response) => {
+    applyCors(request, response)
+    if (request.method === 'OPTIONS') return void response.status(204).end()
+
+    const route = resolveApiV1Route(request.method, request.originalUrl || request.path)
+    if (!route) {
+      const allowed = allowedApiV1Methods(request.originalUrl || request.path)
+      if (allowed.length) {
+        response.setHeader('Allow', allowed.join(', '))
+        return void response.status(405).json({ title: 'Method not allowed', status: 405 })
+      }
+      return void response.status(404).json({ title: 'API resource not found', status: 404 })
+    }
+
+    if (request.method === 'GET') Object.assign(request.query, route.params)
+    else request.body = { ...(request.body ?? {}), ...route.params }
+    await apiV1Handlers[route.target](request, response)
+  },
+)

@@ -43,6 +43,6 @@ describe('applyCors', () => {
     const response = fakeResponse() as { headers: Record<string, string> }
     applyCors(fakeRequest(undefined), response as never)
     expect(response.headers['Access-Control-Allow-Headers']).toBe('Authorization, Content-Type')
-    expect(response.headers['Access-Control-Allow-Methods']).toBe('GET, POST, OPTIONS')
+    expect(response.headers['Access-Control-Allow-Methods']).toBe('GET, POST, PUT, PATCH, OPTIONS')
   })
 })
