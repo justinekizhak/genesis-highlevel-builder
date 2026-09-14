@@ -7,7 +7,6 @@
  * follow the write position. `setValue` resets all four on every call.
  */
 import { monaco } from '@/lib/monaco'
-import { lastEditedLine, lineEditOperations } from '@/lib/model-edits'
 
 const models = new Map<string, monaco.editor.ITextModel>()
 
@@ -29,18 +28,6 @@ export function setModelValue(path: string, content: string) {
   if (model.getValue() === content) return model
   model.pushEditOperations([], [{ range: model.getFullModelRange(), text: content }], () => null)
   return model
-}
-
-/**
- * Moves a model to `content` by editing only the lines that actually differ, instead of replacing
- * the document. Returns the line the edit ends on, which is where writing is currently happening.
- */
-export function applyContentEdits(path: string, content: string) {
-  const model = getOrCreateModel(path)
-  const edits = lineEditOperations(model.getValue(), content)
-  if (!edits.length) return undefined
-  model.pushEditOperations([], edits.map((edit) => ({ ...edit })), () => null)
-  return lastEditedLine(edits)
 }
 
 export function appendToModel(path: string, text: string) {

@@ -98,6 +98,21 @@ describe('OpenAI streaming transport', () => {
     expect(requestBody.instructions).toContain('Load more')
   })
 
+  it('makes the Vue runtime tag an explicit index.html invariant', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    createMock.mockResolvedValue(eventsOf([]))
+    await generateWithOpenAi('Build contacts', {}).catch(() => {})
+    const instructions = createMock.mock.calls[0]?.[0].instructions as string
+    const vueTag = '<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script>'
+
+    expect(instructions).toContain('MANDATORY VUE RUNTIME INVARIANT')
+    expect(instructions).toContain(`index.html must begin with exactly this line`)
+    expect(instructions).toContain(vueTag)
+    expect(instructions).toContain('restore it if the supplied index.html does not already contain it')
+    expect(instructions).toContain("Confirm index.html's first line is exactly the required Vue CDN script tag")
+    expect(instructions).toContain('app.js uses the global Vue object')
+  })
+
   it('steers generated apps toward polished, domain-appropriate product UI', async () => {
     process.env.OPENAI_API_KEY = 'test-key'
     createMock.mockResolvedValue(eventsOf([]))

@@ -10,8 +10,6 @@ const props = defineProps<{
   /** Bumped by the parent on every streamed delta and applied edit, so the view can follow along. */
   followTick: number
   streamingPath?: string
-  /** Where a set of line edits just landed, for files revised rather than written start to finish. */
-  editTarget?: { path: string; line: number }
 }>()
 const emit = defineEmits<{ change: [content: string] }>()
 
@@ -83,17 +81,8 @@ function writePosition(model: monaco.editor.ITextModel) {
 
 watch(() => props.followTick, () => {
   const model = editor?.getModel()
-  if (!model) return
-  let lineNumber: number
-  let column: number
-  if (props.streamingPath === props.path) {
-    ({ lineNumber, column } = writePosition(model))
-  } else if (props.editTarget?.path === props.path) {
-    lineNumber = Math.min(props.editTarget.line, model.getLineCount())
-    column = model.getLineMaxColumn(lineNumber)
-  } else {
-    return
-  }
+  if (!model || props.streamingPath !== props.path) return
+  const { lineNumber, column } = writePosition(model)
   // A decoration rather than the editor's own cursor: Monaco hides that one whenever the editor
   // lacks focus, and focus stays in the chat composer while a generation runs.
   editCaret?.set([{

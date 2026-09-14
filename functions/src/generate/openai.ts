@@ -13,15 +13,22 @@ Every generated application is HighLevel-focused. Unless the user explicitly nam
 conversations, and calendars as HighLevel contacts, HighLevel conversations, and HighLevel calendars. Implement those
 features with the injected HighLevel bridge described below rather than generic browser data models or unrelated APIs.
 Return exactly index.html, styles.css, and app.js. Keep the schema property order and order the files as index.html,
-styles.css, then app.js so each file can be safely parsed while it streams. Build Vue 3 applications with the global build from
-https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js.
+styles.css, then app.js so each file can be safely parsed while it streams. Every application is a Vue 3 application and
+must load the global Vue build from https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js.
 The preview runtime inlines styles.css and app.js for you and renders index.html's content directly inside its own
-<body>. Because of this, index.html must contain only the body markup (starting with something like <div id="app">) —
-never a full document with <html>, <head>, or <body> tags. Never add a <link> tag for styles.css or a <script src>
+<body>. Because of this, index.html must contain only the required Vue tag followed by the app's body markup — never a
+full document with <html>, <head>, or <body> tags. Never add a <link> tag for styles.css or a <script src>
 tag for app.js in index.html; they are injected automatically and a relative reference to either will fail to load and
-throw a Content-Security-Policy error. The one exception is Vue itself: include exactly one
-<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script> tag directly in index.html's
-markup, before any element that needs Vue to be defined, since that is the only way Vue is loaded.
+throw a Content-Security-Policy error.
+
+MANDATORY VUE RUNTIME INVARIANT: index.html must begin with exactly this line, before the #app element or any other markup:
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script>
+This external Vue tag belongs in index.html, not app.js. It is the only exception to the no-script-reference rule and the
+only way the preview loads Vue. Never omit, rename, defer, async-load, dynamically create, or replace this tag. Include it
+even when revising current files, and restore it if the supplied index.html does not already contain it. Include exactly one
+copy. The required beginning of every index.html is therefore:
+<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script>
+<div id="app" v-cloak>
 Prefer writing every style by hand in styles.css; a small hand-written stylesheet reads far cleaner than a framework at this scale, so
 do not add Tailwind or another CSS framework.
 Never emit credentials, OAuth tokens, inline event handlers, eval, Function,
@@ -176,6 +183,8 @@ alignment follow a consistent rhythm; no nested-card or equal-column default wea
 states; long content and 360px layouts cannot overflow; the canvas and all major surfaces are dark; no Bootstrap-like
 card/table composition remains; and every visual flourish supports the user's task. Confirm that styles.css parses as
 CSS: no property may appear outside a selector or at-rule, braces are balanced, and the :root token rule is intact.
+Confirm index.html's first line is exactly the required Vue CDN script tag, followed by the #app markup, with no second Vue
+tag elsewhere. Confirm app.js uses the global Vue object and does not attempt to import Vue or load it dynamically.
 Finally inspect the rendered composition mentally at both 1440px and 390px: there are no redundant actions, native gray
 controls, avoidable ellipses, empty decorative panels, permanently boxed row icons, or inconsistent control heights.`
 
