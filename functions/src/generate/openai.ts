@@ -126,15 +126,23 @@ calendars.availability request:
   window.genesis.highlevel.calendars.availability({ calendarId, startDate, endDate, timezone?, userId?, userIds? })
   startDate and endDate must be millisecond epoch numbers.
 calendars.availability resolved value — a map keyed by date string ("YYYY-MM-DD"), not a "slots" or "availability" array
-at the top level:
+at the top level. This response also carries a "traceId" key as a SIBLING of the date keys (not nested under a date),
+so a plain Object.keys() over it yields "traceId" along with the real dates:
   {
     "2024-10-28": { slots: ["2024-10-28T10:00:00-05:00", "2024-10-28T11:00:00-05:00"] },
-    "2024-10-29": { slots: ["2024-10-29T10:00:00-05:00"] }
+    "2024-10-29": { slots: ["2024-10-29T10:00:00-05:00"] },
+    "traceId": "abc123"
   }
-Always unwrap with:
+Always unwrap with, filtering out traceId (and any other non-date key) before treating the keys as dates — passing
+"traceId" into new Date(...) produces an Invalid Date, and Intl.DateTimeFormat#format throws RangeError: Invalid
+time value on it, which crashes the whole render:
   const availabilityByDate = availabilityResponse
-  const datesWithSlots = Object.keys(availabilityByDate)
+  const datesWithSlots = Object.keys(availabilityByDate).filter(key => /^\d{4}-\d{2}-\d{2}$/.test(key))
   const slotsForDate = (date) => availabilityByDate[date]?.slots ?? []
+This filter is required everywhere the map's keys are read — Object.keys, Object.entries, Object.values, or any other
+iteration over calendars.availability's resolved value must first drop keys that do not match /^\d{4}-\d{2}-\d{2}$/
+(that excludes "traceId" and any other future non-date sibling key) before treating a key as a date, sorting it, or
+passing it to new Date(...) / Intl.DateTimeFormat.
 
 appointments.list request:
   window.genesis.highlevel.appointments.list({ calendarId?, userId?, groupId?, startTime, endTime })
@@ -238,10 +246,44 @@ contacts.list are independent and may stay in that Promise.all together, but app
 calendars — either await calendars.list first and only then call loadAppointments, or drive it off a watcher on the
 calendars array (or selectedCalendarId) with immediate: true as shown above so it fires automatically once its real
 dependency is actually populated, however that happened to occur.
+NEVER SHARE ONE requestToken (OR OTHER STALE-RESPONSE GUARD COUNTER) ACROSS INDEPENDENT ASYNC METHODS: a stale-response
+guard token must belong to exactly one load method and its own loading flag. A pattern like this looks safe but is not:
+  const token = ++this.requestToken   // shared by loadAvailability AND loadAppointments
+  ...
+  if (token !== this.requestToken) return
+  ...
+  finally { if (token === this.requestToken) this.loadingAvailability = false }
+When two such methods are kicked off together, e.g. await Promise.all([this.loadAvailability(), this.loadAppointments()]),
+each increments the same counter before either awaited call resolves, so by the time the first one's request resolves
+this.requestToken has already moved on because of the *other* method's call, not because of a newer call to the same
+method. The guard misfires, the early return skips the finally's loading-flag reset for that token, and the flag (e.g.
+loadingAvailability) is stuck true forever — the UI shows its loading state (e.g. "Loading availability...") permanently
+even though the request succeeded and the data arrived. Give every independent async load its own dedicated counter
+(availabilityRequestToken, appointmentsRequestToken, etc.), scoped 1:1 with the loading flag and error field it guards,
+never a single counter reused across methods that can be in flight at the same time.
 Reserve computed for synchronous, side-effect-free derived values (filtered/sorted lists, formatted labels, counts).
 Never perform an async call or mutate unrelated state inside a computed getter — Vue may not re-run it when you expect,
 and it will not await the request. Any state that depends on an async HighLevel call belongs in data, populated by a
 method that a watch (or, for one-time startup fetches with no driving value, mounted) calls.
+DEFENSIVE DATE/TIME FORMATTING: new Intl.DateTimeFormat(...).format(new Date(value)) throws RangeError: Invalid time
+value when value is undefined, null, or not a real date/timestamp — and because this typically runs inside a computed
+property or v-for during render, that throw crashes the entire app render, not just one row or cell. This is not
+hypothetical: HighLevel list-shaped responses routinely carry non-data sibling keys (for example calendars.availability's
+resolved value has "traceId" as a sibling of its date keys, not nested under one) and optional fields that can be absent
+on a given record. Never call new Date(...) or pass a value through an Intl formatter without first confirming it is a
+real date/timestamp for the field in question:
+- When iterating the keys of an object the contract documents as "a map keyed by date string" (or any similarly-shaped
+  response), filter to keys matching the documented key format (e.g. /^\d{4}-\d{2}-\d{2}$/) before treating a key as a
+  date — do this at every call site that reads the object's keys, not only the first one (Object.keys, Object.entries,
+  Object.values, destructuring, a for...in loop) — never assume every key is a data row.
+- Before formatting a field that a read contract marks optional, or any value sourced from an API response, guard it:
+  skip rendering, fall back to placeholder text such as an em dash, or reuse a null-date check, instead of formatting
+  unconditionally.
+- Wrap a small reusable helper such as
+    function formatDate(value) { const d = new Date(value); return Number.isNaN(d.getTime()) ? '—' : formatter.format(d); }
+  and route every date/time formatting call through it rather than calling new Date(...) and an Intl formatter inline
+  in multiple places, so one fix covers every call site.
+
 Treat all CRM strings as untrusted. Render them with textContent or DOM node construction, never innerHTML interpolation.
 When current files are supplied, revise them according to the latest request rather than discarding useful behavior.
 
