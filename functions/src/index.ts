@@ -550,7 +550,7 @@ export const apiV1 = onRequest(
       return void response.status(404).json({ title: 'API resource not found', status: 404 })
     }
 
-    request.params = { ...request.params, ...route.params }
+    request.params = route.params
     if (request.method !== 'GET') request.body = { ...(request.body ?? {}), ...route.params }
     await apiV1Handlers[route.target](request, response)
   },
