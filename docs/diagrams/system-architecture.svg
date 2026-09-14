@@ -47,7 +47,7 @@
     <rect x="391.5" y="124" width="200" height="90" rx="8" fill="none" stroke="#1e1e1e" stroke-width="1.1" opacity=".38" filter="url(#rough-line)"/>
     <rect x="390" y="125" width="200" height="90" rx="8" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough-shape)"/>
     <text x="490" y="156" text-anchor="middle" class="title" fill="#1e1e1e">Firebase Hosting</text>
-    <text x="490" y="182" text-anchor="middle" class="small" fill="#495057">SPA + /api rewrites</text>
+    <text x="490" y="182" text-anchor="middle" class="small" fill="#495057">SPA + /api/v1 routes</text>
   </g>
   
   <g>
@@ -61,8 +61,8 @@
     <rect x="391.5" y="284" width="430" height="155" rx="8" fill="none" stroke="#1e1e1e" stroke-width="1.1" opacity=".38" filter="url(#rough-line)"/>
     <rect x="390" y="285" width="430" height="155" rx="8" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough-shape)"/>
     <text x="605" y="316" text-anchor="middle" class="title" fill="#1e1e1e">Cloud Functions</text>
-    <text x="605" y="342" text-anchor="middle" class="small" fill="#495057">generateApp (SSE) · save/restore · snapshots</text>
-    <text x="605" y="361" text-anchor="middle" class="small" fill="#495057">OAuth callback · hlProxy · hlWebhook</text>
+    <text x="605" y="342" text-anchor="middle" class="small" fill="#495057">apiV1: generation · files · snapshots</text>
+    <text x="605" y="361" text-anchor="middle" class="small" fill="#495057">OAuth callback · webhook intake</text>
     <text x="605" y="380" text-anchor="middle" class="small" fill="#495057">auth · CORS · validation · rate limits</text>
   </g>
   

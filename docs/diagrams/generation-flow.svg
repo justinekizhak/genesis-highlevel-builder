@@ -94,7 +94,7 @@
     <rect x="391.5" y="519" width="240" height="120" rx="8" fill="none" stroke="#1e1e1e" stroke-width="1.1" opacity=".38" filter="url(#rough-line)"/>
     <rect x="390" y="520" width="240" height="120" rx="8" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough-shape)"/>
     <text x="510" y="551" text-anchor="middle" class="title" fill="#1e1e1e">Runtime data path</text>
-    <text x="510" y="577" text-anchor="middle" class="small" fill="#495057">iframe → postMessage → hlProxy</text>
+    <text x="510" y="577" text-anchor="middle" class="small" fill="#495057">iframe → postMessage → /api/v1 proxy</text>
     <text x="510" y="596" text-anchor="middle" class="small" fill="#495057">→ real HighLevel data</text>
   </g>
   

@@ -355,9 +355,9 @@
     {
       "id": "function",
       "type": "rectangle",
-      "x": 880,
+      "x": 850,
       "y": 120,
-      "width": 245,
+      "width": 300,
       "height": 125,
       "angle": 0,
       "strokeColor": "#7048e8",
@@ -385,9 +385,9 @@
     {
       "id": "function-title",
       "type": "text",
-      "x": 892,
+      "x": 862,
       "y": 134,
-      "width": 221,
+      "width": 276,
       "height": 28,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -411,20 +411,20 @@
       "locked": false,
       "fontSize": 18,
       "fontFamily": 1,
-      "text": "hlProxy Function",
+      "text": "Versioned proxy route",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
-      "originalText": "hlProxy Function",
+      "originalText": "Versioned proxy route",
       "autoResize": false,
       "lineHeight": 1.25
     },
     {
       "id": "function-body",
       "type": "text",
-      "x": 894,
+      "x": 864,
       "y": 166,
-      "width": 217,
+      "width": 272,
       "height": 69,
       "angle": 0,
       "strokeColor": "#495057",
@@ -448,11 +448,11 @@
       "locked": false,
       "fontSize": 14,
       "fontFamily": 1,
-      "text": "Authenticate user\n60 requests/minute\nValidate request shape",
+      "text": "POST /api/v1/integrations/highlevel\n/proxy-requests · 60/min\nAuthenticate · validate",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
-      "originalText": "Authenticate user\n60 requests/minute\nValidate request shape",
+      "originalText": "POST /api/v1/integrations/highlevel\n/proxy-requests · 60/min\nAuthenticate · validate",
       "autoResize": false,
       "lineHeight": 1.25
     },
@@ -1110,7 +1110,7 @@
       "type": "arrow",
       "x": 825,
       "y": 182,
-      "width": 55,
+      "width": 25,
       "height": 0,
       "angle": 0,
       "strokeColor": "#1e1e1e",
@@ -1140,7 +1140,7 @@
           0
         ],
         [
-          55,
+          25,
           0
         ]
       ],
@@ -1154,7 +1154,7 @@
     {
       "id": "p3-label",
       "type": "text",
-      "x": 782.5,
+      "x": 767.5,
       "y": 162,
       "width": 140,
       "height": 24,
@@ -1191,7 +1191,7 @@
     {
       "id": "p4",
       "type": "arrow",
-      "x": 1002,
+      "x": 1000,
       "y": 245,
       "width": 0,
       "height": 95,

@@ -12,8 +12,8 @@
   <path d="M35 70 Q 600 66 1165 70" stroke="#1e1e1e" stroke-width="1" opacity=".22" fill="none" filter="url(#rough-line)"/>
   <g><path d="M 260 177 Q 290.5 173 315 177" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
 <g><path d="M 535 177 Q 565.5 173 590 177" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="504.5" y="161" width="116" height="23" rx="3" fill="#ffffff"/><text x="562.5" y="178" text-anchor="middle" class="edge-label" fill="#495057">postMessage</text></g>
-<g><path d="M 825 182 Q 855.5 178 880 182" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="794.5" y="166" width="116" height="23" rx="3" fill="#ffffff"/><text x="852.5" y="183" text-anchor="middle" class="edge-label" fill="#495057">HTTPS</text></g>
-<g><path d="M 1002 245 Q 1005 288.5 1002 340" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 825 182 Q 840.5 178 850 182" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="779.5" y="166" width="116" height="23" rx="3" fill="#ffffff"/><text x="837.5" y="183" text-anchor="middle" class="edge-label" fill="#495057">HTTPS</text></g>
+<g><path d="M 1000 245 Q 1003 288.5 1000 340" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
 <g><path d="M 880 395 Q 855.5 391 825 395" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
 <g><path d="M 590 395 Q 565.5 391 535 395" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
 <g><path d="M 315 395 Q 290.5 391 260 395" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="229.5" y="379" width="116" height="23" rx="3" fill="#ffffff"/><text x="287.5" y="396" text-anchor="middle" class="edge-label" fill="#495057">JSON result</text></g>
@@ -25,9 +25,9 @@
 <g><rect x="590" y="120" width="235" height="125" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="707.5" y="152" text-anchor="middle" class="node-title">Host bridge</text><text x="707.5" y="181" text-anchor="middle" class="node-body">Check message source</text>
 <text x="707.5" y="200" text-anchor="middle" class="node-body">Check operation name</text>
 <text x="707.5" y="219" text-anchor="middle" class="node-body">Attach Firebase ID token</text></g>
-<g><rect x="880" y="120" width="245" height="125" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1002.5" y="152" text-anchor="middle" class="node-title">hlProxy Function</text><text x="1002.5" y="181" text-anchor="middle" class="node-body">Authenticate user</text>
-<text x="1002.5" y="200" text-anchor="middle" class="node-body">60 requests/minute</text>
-<text x="1002.5" y="219" text-anchor="middle" class="node-body">Validate request shape</text></g>
+<g><rect x="850" y="120" width="300" height="125" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1000" y="152" text-anchor="middle" class="node-title">Versioned proxy route</text><text x="1000" y="181" text-anchor="middle" class="node-body">POST /api/v1/integrations/highlevel</text>
+<text x="1000" y="200" text-anchor="middle" class="node-body">/proxy-requests · 60/min</text>
+<text x="1000" y="219" text-anchor="middle" class="node-body">Authenticate · validate</text></g>
 <g><rect x="880" y="340" width="245" height="110" rx="9" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="1002.5" y="372" text-anchor="middle" class="node-title">Operation allowlist</text><text x="1002.5" y="401" text-anchor="middle" class="node-body">Contacts · conversations</text>
 <text x="1002.5" y="420" text-anchor="middle" class="node-body">Calendars · appointments</text></g>
 <g><rect x="590" y="340" width="235" height="110" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="707.5" y="372" text-anchor="middle" class="node-title">Connection resolver</text><text x="707.5" y="401" text-anchor="middle" class="node-body">Load or refresh token</text>

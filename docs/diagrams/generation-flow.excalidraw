@@ -1151,11 +1151,11 @@
       "locked": false,
       "fontSize": 13,
       "fontFamily": 1,
-      "text": "iframe → postMessage → hlProxy\n→ real HighLevel data",
+      "text": "iframe → postMessage → /api/v1 proxy\n→ real HighLevel data",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
-      "originalText": "iframe → postMessage → hlProxy\n→ real HighLevel data",
+      "originalText": "iframe → postMessage → /api/v1 proxy\n→ real HighLevel data",
       "autoResize": false,
       "lineHeight": 1.25
     },

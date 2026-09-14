@@ -74,3 +74,20 @@ test('generated diagrams preserve the shared semantic color language', () => {
     }
   }
 })
+
+test('generated diagrams describe the public v1 API instead of legacy function URLs', () => {
+  execFileSync(process.execPath, [resolve(root, 'scripts/generate-doc-diagrams.mjs')], { cwd: root })
+
+  const capabilityMap = readFileSync(resolve(diagramsDir, 'backend-capability-map.svg'), 'utf8')
+  const proxyFlow = readFileSync(resolve(diagramsDir, 'highlevel-proxy-flow.svg'), 'utf8')
+  const deploymentFlow = readFileSync(resolve(diagramsDir, 'deployment-runtime-flow.svg'), 'utf8')
+  const systemArchitecture = readFileSync(resolve(diagramsDir, 'system-architecture.svg'), 'utf8')
+  const generationFlow = readFileSync(resolve(diagramsDir, 'generation-flow.svg'), 'utf8')
+
+  assert.match(capabilityMap, /Hosting \/api\/v1 routes/)
+  assert.match(proxyFlow, /POST \/api\/v1\/integrations\/highlevel/)
+  assert.match(deploymentFlow, /Verify \/api\/v1\/health/)
+  assert.doesNotMatch(deploymentFlow, /\/api\/healthz/)
+  assert.match(systemArchitecture, /SPA \+ \/api\/v1 routes/)
+  assert.match(generationFlow, /iframe → postMessage → \/api\/v1 proxy/)
+})

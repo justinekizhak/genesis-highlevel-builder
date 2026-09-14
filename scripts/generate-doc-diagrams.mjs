@@ -162,7 +162,7 @@ const diagrams = [
   {
     name: 'backend-capability-map', title: 'Backend Capability Map', width: 1200, height: 690,
     nodes: [
-      { id: 'entry', role: 'ui', x: 40, y: 115, w: 220, h: 105, title: 'HTTPS entry', body: ['Hosting /api rewrites', 'Cloud Functions'] },
+      { id: 'entry', role: 'ui', x: 40, y: 115, w: 220, h: 105, title: 'HTTPS entry', body: ['Hosting /api/v1 routes', 'Cloud Functions'] },
       { id: 'generation', role: 'service', x: 330, y: 95, w: 230, h: 105, title: 'Generation', body: ['generate · cancel', 'stream SSE'] },
       { id: 'projects', role: 'data', x: 625, y: 95, w: 230, h: 105, title: 'Project state', body: ['load · save · history', 'restore snapshots'] },
       { id: 'integration', role: 'service', x: 920, y: 95, w: 230, h: 105, title: 'Integrations', body: ['OAuth start/callback', 'connection status'] },
@@ -213,7 +213,7 @@ const diagrams = [
       { id: 'action', role: 'ui', x: 40, y: 120, w: 220, h: 115, title: 'User action', body: ['Search contacts', 'Load appointments', 'Send a message'] },
       { id: 'iframe', role: 'ui', x: 315, y: 120, w: 220, h: 115, title: 'Generated iframe', body: ['Calls only', 'window.genesis.highlevel'] },
       { id: 'host', role: 'service', x: 590, y: 120, w: 235, h: 125, title: 'Host bridge', body: ['Check message source', 'Check operation name', 'Attach Firebase ID token'] },
-      { id: 'function', role: 'service', x: 880, y: 120, w: 245, h: 125, title: 'hlProxy Function', body: ['Authenticate user', '60 requests/minute', 'Validate request shape'] },
+      { id: 'function', role: 'service', x: 850, y: 120, w: 300, h: 125, title: 'Versioned proxy route', body: ['POST /api/v1/integrations/highlevel', '/proxy-requests · 60/min', 'Authenticate · validate'] },
       { id: 'allowlist', role: 'decision', x: 880, y: 340, w: 245, h: 110, title: 'Operation allowlist', body: ['Contacts · conversations', 'Calendars · appointments'] },
       { id: 'token', role: 'data', x: 590, y: 340, w: 235, h: 110, title: 'Connection resolver', body: ['Load or refresh token', 'Inject user location ID'] },
       { id: 'api', role: 'external', x: 315, y: 340, w: 220, h: 110, title: 'HighLevel API', body: ['Execute one approved call'] },
@@ -222,7 +222,7 @@ const diagrams = [
     ],
     edges: [
       { id: 'p1', start: [260, 177], end: [315, 177] }, { id: 'p2', start: [535, 177], end: [590, 177], label: 'postMessage' },
-      { id: 'p3', start: [825, 182], end: [880, 182], label: 'HTTPS' }, { id: 'p4', start: [1002, 245], end: [1002, 340] },
+      { id: 'p3', start: [825, 182], end: [850, 182], label: 'HTTPS' }, { id: 'p4', start: [1000, 245], end: [1000, 340] },
       { id: 'p5', start: [880, 395], end: [825, 395] }, { id: 'p6', start: [590, 395], end: [535, 395] },
       { id: 'p7', start: [315, 395], end: [260, 395], label: 'JSON result' },
     ],
@@ -277,7 +277,7 @@ const diagrams = [
       { id: 'identity', role: 'decision', x: 850, y: 115, w: 255, h: 105, title: 'Production identity', body: ['Short-lived Google access', 'through Workload Identity'] },
       { id: 'firebase', role: 'service', x: 850, y: 330, w: 255, h: 120, title: 'Firebase deploy', body: ['Hosting · Functions', 'Rules + indexes'] },
       { id: 'config', role: 'data', x: 470, y: 515, w: 275, h: 105, title: 'Runtime configuration', body: ['Secret Manager holds keys', 'Environment holds non-secrets'] },
-      { id: 'health', role: 'ui', x: 850, y: 525, w: 255, h: 105, title: 'Post-deploy checks', body: ['Open hosting URL', 'Verify /api/healthz'] },
+      { id: 'health', role: 'ui', x: 850, y: 525, w: 255, h: 105, title: 'Post-deploy checks', body: ['Open hosting URL', 'Verify /api/v1/health'] },
       { id: 'local', role: 'neutral', x: 40, y: 430, w: 285, h: 130, title: 'Local development', body: ['Vite frontend', 'Firebase emulators', 'Real external integrations'] },
     ],
     edges: [

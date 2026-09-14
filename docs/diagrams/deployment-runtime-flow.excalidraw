@@ -825,11 +825,11 @@
       "locked": false,
       "fontSize": 14,
       "fontFamily": 1,
-      "text": "Open hosting URL\nVerify /api/healthz",
+      "text": "Open hosting URL\nVerify /api/v1/health",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
-      "originalText": "Open hosting URL\nVerify /api/healthz",
+      "originalText": "Open hosting URL\nVerify /api/v1/health",
       "autoResize": false,
       "lineHeight": 1.25
     },

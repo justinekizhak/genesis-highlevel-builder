@@ -8,7 +8,7 @@ This is the beginner-friendly map of what happens behind the Genesis interface. 
 
 [Open the editable Excalidraw source](diagrams/backend-capability-map.excalidraw)
 
-Cloud Functions form the trusted backend boundary. The browser can manage its own project metadata through owner-scoped Firestore rules, but files, snapshots, OAuth credentials, AI generation, and HighLevel requests are controlled by server code.
+Cloud Functions form the trusted backend boundary. The browser can manage its own project metadata through owner-scoped Firestore rules, but files, snapshots, OAuth credentials, AI generation, and HighLevel requests are controlled by server code. Browser-facing operations enter through the resource-oriented `/api/v1` facade; the OAuth callback and webhook remain separate inbound integration endpoints.
 
 ## 2. Connecting a HighLevel account
 
@@ -24,7 +24,7 @@ The OAuth state is a short-lived, one-time link between the callback and the sig
 
 [Open the editable Excalidraw source](diagrams/highlevel-proxy-flow.excalidraw)
 
-Generated code never receives credentials and cannot choose arbitrary URLs. It asks the host page for a named operation; the server authenticates the user, validates parameters, resolves the connected location, and performs one allowlisted HighLevel request. Failures remain visible instead of being replaced with sample data.
+Generated code never receives credentials and cannot choose arbitrary URLs. It asks the host page for a named operation; the host calls `POST /api/v1/integrations/highlevel/proxy-requests`, and the server authenticates the user, validates parameters, resolves the connected location, and performs one allowlisted HighLevel request. Failures remain visible instead of being replaced with sample data.
 
 ## 4. How file history and restore work
 

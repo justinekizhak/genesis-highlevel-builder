@@ -136,11 +136,11 @@
       "locked": false,
       "fontSize": 14,
       "fontFamily": 1,
-      "text": "Hosting /api rewrites\nCloud Functions",
+      "text": "Hosting /api/v1 routes\nCloud Functions",
       "textAlign": "center",
       "verticalAlign": "middle",
       "containerId": null,
-      "originalText": "Hosting /api rewrites\nCloud Functions",
+      "originalText": "Hosting /api/v1 routes\nCloud Functions",
       "autoResize": false,
       "lineHeight": 1.25
     },

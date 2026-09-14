@@ -43,9 +43,15 @@ paths:
       operationId: createGeneration
       tags: [Generations]
       summary: Generate or refine the project's application
+      servers:
+        - url: https://us-central1-jk-ai-app-builder.cloudfunctions.net/apiV1
+          description: Direct production Function URL required for unbuffered SSE
+        - url: http://127.0.0.1:5001/jk-ai-app-builder/us-central1/apiV1
+          description: Firebase Functions emulator
       description: |
         Starts one generation for the project. Only one generation may hold the project lock.
-        The response is an SSE stream; comment frames are heartbeats and may be ignored.
+        The response is an SSE stream; comment frames are heartbeats and may be ignored. Production
+        clients call the Function directly because Firebase Hosting buffers rewritten streams.
       requestBody:
         required: true
         content:
