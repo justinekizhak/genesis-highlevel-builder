@@ -64,6 +64,16 @@ service cloud.firestore {
         allow read: if ownsProject(projectId);
         allow write: if false;
       }
+
+      match /variationSets/{variationSetId} {
+        allow read: if signedIn() && ownsProject(projectId);
+        allow write: if false;
+
+        match /candidates/{candidateId} {
+          allow read: if signedIn() && ownsProject(projectId);
+          allow write: if false;
+        }
+      }
     }
 
     match /highlevelConnections/{userId} {

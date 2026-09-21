@@ -130,3 +130,86 @@ describe('acquireGenerationLock / releaseGenerationLock', () => {
     vi.resetModules()
   })
 })
+
+function makeReadOnlyFirestore(documents: Record<string, Record<string, unknown>>) {
+  const snapshotOf = (path: string) => ({
+    id: path.split('/').pop()!,
+    exists: documents[path] !== undefined,
+    get: (key: string) => documents[path]?.[key],
+    data: () => documents[path],
+  })
+  const childDocs = (collectionPath: string) => Object.keys(documents)
+    .filter((path) => path.startsWith(`${collectionPath}/`) && !path.slice(collectionPath.length + 1).includes('/'))
+    .map(snapshotOf)
+  const makeCollection = (collectionPath: string): any => {
+    const query: any = {
+      orderBy: () => query,
+      limit: () => query,
+      limitToLast: () => query,
+      where: () => query,
+      get: async () => {
+        const docs = childDocs(collectionPath)
+        return { docs, empty: docs.length === 0 }
+      },
+    }
+    query.doc = (id: string) => ({
+      id,
+      path: `${collectionPath}/${id}`,
+      get: async () => snapshotOf(`${collectionPath}/${id}`),
+      collection: (name: string) => makeCollection(`${collectionPath}/${id}/${name}`),
+    })
+    return query
+  }
+  return { collection: (name: string) => makeCollection(name) }
+}
+
+async function loadPersistenceWith(documents: Record<string, Record<string, unknown>>) {
+  vi.resetModules()
+  const firestore = makeReadOnlyFirestore(documents)
+  vi.doMock('firebase-admin/firestore', async () => {
+    const actual = await vi.importActual<typeof import('firebase-admin/firestore')>('firebase-admin/firestore')
+    return { ...actual, getFirestore: () => firestore }
+  })
+  return import('./persistence.js')
+}
+
+describe('project state and snapshot listing', () => {
+  it('returns the pending variation set pointer with project state', async () => {
+    const { loadProjectState } = await loadPersistenceWith({
+      'projects/project-1': { ownerId: 'user-1', latestSnapshotId: 'snap-1', pendingVariationSetId: 'set-1' },
+      'projects/project-1/snapshots/snap-1': { files: { 'app.js': 'x' } },
+      'projects/project-1/files/app.js': { path: 'app.js', content: 'x' },
+    })
+    const state = await loadProjectState('user-1', 'project-1')
+    expect(state.pendingVariationSetId).toBe('set-1')
+    vi.doUnmock('firebase-admin/firestore')
+  })
+
+  it('omits the pointer when no variation set is pending', async () => {
+    const { loadProjectState } = await loadPersistenceWith({
+      'projects/project-1': { ownerId: 'user-1' },
+    })
+    expect((await loadProjectState('user-1', 'project-1')).pendingVariationSetId).toBeUndefined()
+    vi.doUnmock('firebase-admin/firestore')
+  })
+
+  it('returns variation linkage in snapshot history and omits it from ordinary snapshots', async () => {
+    const { listProjectSnapshots } = await loadPersistenceWith({
+      'projects/project-1': { ownerId: 'user-1' },
+      'projects/project-1/snapshots/snap-variation': {
+        prompt: 'Show me a few directions',
+        summary: 'Direction A',
+        variationSetId: 'set-1',
+        variationCandidateId: 'candidate-a',
+      },
+      'projects/project-1/snapshots/snap-plain': { prompt: 'Build it', summary: 'Built it' },
+    })
+    const snapshots = await listProjectSnapshots('user-1', 'project-1')
+    const variationSnapshot = snapshots.find((snapshot) => snapshot.id === 'snap-variation')
+    const plainSnapshot = snapshots.find((snapshot) => snapshot.id === 'snap-plain')
+    expect(variationSnapshot).toMatchObject({ variationSetId: 'set-1', variationCandidateId: 'candidate-a' })
+    expect(plainSnapshot?.variationSetId).toBeUndefined()
+    expect(plainSnapshot?.variationCandidateId).toBeUndefined()
+    vi.doUnmock('firebase-admin/firestore')
+  })
+})

@@ -226,6 +226,8 @@ export async function loadProjectState(uid: string, projectId: string) {
   const snapshot = snapshotId ? await projectReference.collection('snapshots').doc(snapshotId).get() : undefined
   return {
     snapshotId: snapshot?.id,
+    // Lets a reload restore comparison mode without listing or scanning historical variation sets.
+    pendingVariationSetId: project.get('pendingVariationSetId') as string | undefined,
     files: currentFiles.empty
       ? snapshot?.get('files') ?? null
       : Object.fromEntries(currentFiles.docs.map((document) => [document.get('path'), document.get('content')])),
@@ -242,6 +244,10 @@ export async function listProjectSnapshots(uid: string, projectId: string) {
   const snapshots = await projectReference.collection('snapshots').orderBy('createdAt', 'desc').limit(50).get()
   return snapshots.docs.map((document) => ({
     id: document.id,
+    // Present only on a snapshot promoted from a variation finalist, so history can reopen the
+    // comparison; ordinary snapshots omit both fields.
+    variationSetId: document.get('variationSetId') as string | undefined,
+    variationCandidateId: document.get('variationCandidateId') as string | undefined,
     generationId: document.get('generationId'),
     prompt: document.get('prompt') ?? '',
     summary: document.get('summary') ?? '',

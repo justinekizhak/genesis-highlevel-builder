@@ -14,7 +14,9 @@ function makeFakeFirestore() {
       get: async (reference: ReturnType<typeof docRef>) => reference.get(),
       set: (reference: ReturnType<typeof docRef>, data: { count?: unknown }, _options: unknown) => {
         const current = docs.get(reference.id) ?? {}
-        const increment = typeof data.count === 'object' && data.count !== null ? 1 : (data.count as number)
+        const increment = typeof data.count === 'object' && data.count !== null
+          ? ((data.count as { operand?: number }).operand ?? 1)
+          : (data.count as number)
         docs.set(reference.id, { count: (current.count ?? 0) + (increment ?? 1) })
       },
     }),
@@ -78,6 +80,41 @@ describe('enforceRateLimit', () => {
     expect(error).toBeInstanceOf(RateLimitError)
     expect(error.retryAfterSeconds).toBeGreaterThanOrEqual(1)
     expect(error.retryAfterSeconds).toBeLessThanOrEqual(60)
+    vi.doUnmock('firebase-admin/firestore')
+  })
+})
+
+describe('weighted rate limiting', () => {
+  async function loadWeighted() {
+    vi.resetModules()
+    const firestore = makeFakeFirestore()
+    vi.doMock('firebase-admin/firestore', async () => {
+      const actual = await vi.importActual<typeof import('firebase-admin/firestore')>('firebase-admin/firestore')
+      return { ...actual, getFirestore: () => firestore }
+    })
+    return import('./rate-limit.js')
+  }
+
+  it('atomically charges a supplied weight', async () => {
+    const { enforceRateLimit, RateLimitError } = await loadWeighted()
+    await enforceRateLimit('user-1', 'generate-minute', 5, 60, undefined, 4)
+    await expect(enforceRateLimit('user-1', 'generate-minute', 5, 60, undefined, 2)).rejects.toThrow(RateLimitError)
+    vi.doUnmock('firebase-admin/firestore')
+  })
+
+  it('rejects a weight larger than the remaining budget without incrementing', async () => {
+    const { enforceRateLimit } = await loadWeighted()
+    await enforceRateLimit('user-1', 'generate-minute', 5, 60, undefined, 4)
+    await expect(enforceRateLimit('user-1', 'generate-minute', 5, 60, undefined, 2)).rejects.toThrow()
+    await expect(enforceRateLimit('user-1', 'generate-minute', 5, 60, undefined, 1)).resolves.toBeUndefined()
+    vi.doUnmock('firebase-admin/firestore')
+  })
+
+  it('defaults to a single unit and rejects a non-positive or fractional weight', async () => {
+    const { enforceRateLimit } = await loadWeighted()
+    await enforceRateLimit('user-9', 'generate-minute', 2, 60)
+    await expect(enforceRateLimit('user-9', 'generate-minute', 2, 60, undefined, 0)).rejects.toThrow('positive integer')
+    await expect(enforceRateLimit('user-9', 'generate-minute', 2, 60, undefined, 1.5)).rejects.toThrow('positive integer')
     vi.doUnmock('firebase-admin/firestore')
   })
 })
