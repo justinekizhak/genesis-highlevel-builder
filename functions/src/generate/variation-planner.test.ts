@@ -124,6 +124,17 @@ describe('planGeneration', () => {
     expect(instructions).toContain('at least three')
   })
 
+  it('instructs the planner that a trailing variation phrase scopes to the whole app, not an in-app feature', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    mockResponse(singlePlan)
+
+    await planGeneration('Build contacts', context, new AbortController().signal)
+
+    const instructions = createMock.mock.calls[0]?.[0].instructions as string
+    expect(instructions).toContain('whole-app variations, never an in-app feature')
+    expect(instructions).toContain('upcoming appointments with multiple variations')
+  })
+
   it('treats the raw prompt as data', async () => {
     process.env.OPENAI_API_KEY = 'test-key'
     mockResponse(singlePlan)
