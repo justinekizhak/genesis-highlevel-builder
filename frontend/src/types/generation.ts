@@ -74,6 +74,9 @@ export type ProjectSnapshot = {
   provider: string
   model?: string
   kind?: 'generation' | 'partial' | 'backup' | 'manual'
+  /** Present only on a snapshot promoted from a variation finalist. */
+  variationSetId?: string
+  variationCandidateId?: string
   fileCount: number
   createdAt: string
 }

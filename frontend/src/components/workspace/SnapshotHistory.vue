@@ -26,6 +26,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   restore: [snapshot: ProjectSnapshot]
+  compareVariation: [variationSetId: string]
   compare: [snapshot: ProjectSnapshot, index: number]
   editField: [snapshot: ProjectSnapshot, field: EditableField, value: string]
 }>()
@@ -257,6 +258,15 @@ function pasteAsPlainText(event: ClipboardEvent) {
             {{ selectedSnapshot.summary || 'Add a description…' }}
           </p>
         </div>
+        <Button
+          v-if="selectedSnapshot.variationSetId"
+          size="sm"
+          variant="secondary"
+          data-compare-finalist
+          @click="emit('compareVariation', selectedSnapshot.variationSetId)"
+        >
+          Compare finalist
+        </Button>
         <Button
           size="sm"
           :disabled="selectedSnapshot.id === props.currentSnapshotId || Boolean(props.restoringSnapshotId)"

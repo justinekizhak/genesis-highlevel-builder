@@ -1241,3 +1241,25 @@ button { touch-action: manipulation; }
     @apply bg-background text-foreground;
   }
 }
+
+/* Shared workspace grid hooks for the variation comparison stage; component styling stays scoped. */
+.workspace.has-variation-stage {
+  grid-template-columns: minmax(270px, .72fr) minmax(0, 2.28fr);
+}
+
+.variation-stage {
+  min-width: 0;
+  min-height: 0;
+  grid-column: 2;
+  overflow: auto;
+}
+
+@media (max-width: 800px) {
+  .workspace.has-variation-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .variation-stage {
+    grid-column: 1;
+  }
+}

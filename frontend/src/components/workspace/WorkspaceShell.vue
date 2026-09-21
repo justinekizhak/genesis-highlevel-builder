@@ -50,6 +50,9 @@ import CommandPalette from '@/components/workspace/CommandPalette.vue'
 import ShortcutsDialog from '@/components/workspace/ShortcutsDialog.vue'
 import SnapshotHistory from '@/components/workspace/SnapshotHistory.vue'
 import SuggestionChips from '@/components/workspace/SuggestionChips.vue'
+import VariationComparison from '@/components/workspace/VariationComparison.vue'
+import VariationProgress from '@/components/workspace/VariationProgress.vue'
+import { useVariationGeneration } from '@/composables/useVariationGeneration'
 import { useShortcuts } from '@/composables/useShortcuts'
 import {
   cancelApplicationGeneration,
@@ -67,11 +70,13 @@ import { useProjectsStore } from '@/stores/projects'
 import {
   generationModels,
   isGenerationModel,
+  isVariationEvent,
   type ChatMessage,
   type GeneratedFile,
   type GenerationEvent,
   type GenerationModel,
   type ProjectSnapshot,
+  type VariationFinalist,
 } from '@/types/generation'
 import { highLevelOperationSet, type HighLevelOperation, type HighLevelParameters } from '@/types/highlevel'
 
@@ -82,6 +87,14 @@ const projectsStore = useProjectsStore()
 const authStore = useAuthStore()
 const highLevelStore = useHighLevelStore()
 useIntegrationStatusQuery()
+const variationGeneration = useVariationGeneration(
+  () => projectId.value,
+  async () => authStore.getIdToken(),
+)
+const variationState = computed(() => variationGeneration.state.value)
+const variationError = computed(() => variationGeneration.error.value)
+const isVariationActive = computed(() => variationGeneration.isActive.value)
+const variationFinalists = computed(() => variationGeneration.finalists.value)
 const MonacoDiffEditor = defineAsyncComponent({
   loader: () => import('@guolao/vue-monaco-editor').then((module) => module.VueMonacoDiffEditor),
   loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
@@ -185,6 +198,9 @@ const statusLabel = computed(() => {
 const projectId = computed(() => String(route.params.projectId ?? 'local-demo'))
 const projectTitle = computed(() => projectsStore.projects.find((project) => project.id === projectId.value)?.name ?? 'Untitled project')
 const workspaceStyle = computed(() => {
+  // While the comparison stage owns the right side, the global `.has-variation-stage` grid applies
+  // instead of the three-panel inline template.
+  if (isVariationActive.value) return {}
   const chat = chatCollapsed.value ? 'minmax(44px, 44px)' : `minmax(250px, ${chatWidth.value}px)`
   const chatResizer = chatCollapsed.value ? 'minmax(0px, 0fr)' : 'minmax(6px, 0fr)'
   const code = codeCollapsed.value
@@ -438,6 +454,10 @@ onMounted(async () => {
       currentSnapshotId.value = state.snapshotId
     }
     if (state?.messages?.length) messages.value = state.messages
+    if (state?.pendingVariationSetId) {
+      // A reload failure must stay recoverable: the active files above remain fully usable.
+      await variationGeneration.reloadPendingVariation(state.pendingVariationSetId).catch(() => undefined)
+    }
   } catch (error) {
     generationError.value = error instanceof Error ? error.message : 'Could not load this project.'
   } finally {
@@ -612,6 +632,14 @@ function formatTokenCount(value: number) {
 }
 
 function handleEvent(event: GenerationEvent) {
+  if (isVariationEvent(event)) {
+    variationGeneration.accept(event)
+    return
+  }
+  handleSingleGenerationEvent(event)
+}
+
+function handleSingleGenerationEvent(event: GenerationEvent) {
   switch (event.type) {
     case 'generation_started':
       currentGenerationId.value = event.generationId
@@ -685,6 +713,31 @@ function handleEvent(event: GenerationEvent) {
       streamingFilePath.value = undefined
       break
   }
+}
+
+async function chooseFinalist(candidateId: string) {
+  let result: { snapshotId: string; files: Record<string, string> } | undefined
+  try {
+    result = await variationGeneration.selectFinalist(candidateId)
+  } catch {
+    // The composable restored the comparison and exposed a retryable message; both previews stay mounted.
+    return
+  }
+  if (!result) return
+  hydrateFiles(result.files)
+  currentSnapshotId.value = result.snapshotId
+  variationGeneration.reset()
+  filesBeforeGeneration = undefined
+  await queryClient.invalidateQueries({ queryKey: ['project-state', projectId.value] })
+  await queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
+  renderPreview()
+  mobilePanel.value = 'preview'
+}
+
+/** Reopens a persisted comparison from snapshot history without touching active files. */
+async function openVariationComparison(payload: { variationSetId: string }) {
+  snapshotOpen.value = false
+  await variationGeneration.reloadPendingVariation(payload.variationSetId).catch(() => undefined)
 }
 
 async function submitPrompt(suggestion?: string) {
@@ -834,6 +887,16 @@ const { list: shortcutsList } = useShortcuts([
   { keys: 'mod+2', description: 'Switch to the code panel (mobile)', handler: () => { mobilePanel.value = 'code' } },
   { keys: 'mod+3', description: 'Switch to the preview panel (mobile)', handler: () => { mobilePanel.value = 'preview' } },
 ])
+
+defineExpose({
+  files,
+  currentSnapshotId,
+  variationState,
+  variationError,
+  handleEvent,
+  chooseFinalist,
+  openVariationComparison,
+})
 </script>
 
 <template>
@@ -900,7 +963,7 @@ const { list: shortcutsList } = useShortcuts([
       </TabsList>
     </Tabs>
 
-    <section class="workspace" :style="workspaceStyle">
+    <section class="workspace" :class="{ 'has-variation-stage': isVariationActive }" :style="workspaceStyle">
       <aside class="panel chat-panel" :class="{ 'mobile-active': mobilePanel === 'chat', 'is-collapsed': chatCollapsed }">
         <Button
           v-if="chatCollapsed"
@@ -961,14 +1024,14 @@ const { list: shortcutsList } = useShortcuts([
               v-model="prompt"
               aria-label="Describe the HighLevel app to generate"
               placeholder="Build a contact dashboard with search..."
-              :disabled="isGenerating"
+              :disabled="isGenerating || isVariationActive"
               @keydown.enter.exact.prevent="submitPrompt()"
             />
             <div class="composer-footer">
               <div class="composer-statusbar">
                 <label class="model-select" title="Choose the model for the next generation">
                   <span class="sr-only">Generation model</span>
-                  <select v-model="selectedModel" :disabled="isGenerating" aria-label="Generation model">
+                  <select v-model="selectedModel" :disabled="isGenerating || isVariationActive" aria-label="Generation model">
                     <option v-for="model in generationModels" :key="model.value" :value="model.value">{{ model.label }}</option>
                   </select>
                   <IconChevronDown :size="12" aria-hidden="true" />
@@ -978,7 +1041,7 @@ const { list: shortcutsList } = useShortcuts([
               <Button v-if="isGenerating" type="button" variant="secondary" size="icon" aria-label="Stop generation" :disabled="isStopping" @click="stopGeneration">
                 <IconPlayerStop :size="15" />
               </Button>
-              <Button v-else type="submit" size="icon" aria-label="Generate app" :disabled="!prompt.trim()">
+              <Button v-else type="submit" size="icon" aria-label="Generate app" :disabled="!prompt.trim() || isVariationActive">
                 <IconSend :size="16" />
               </Button>
             </div>
@@ -1001,6 +1064,7 @@ const { list: shortcutsList } = useShortcuts([
         @keydown="resizeChatPanelWithKeyboard"
       ><span /></div>
 
+      <template v-if="!isVariationActive">
       <section class="panel code-panel" :class="{ 'mobile-active': mobilePanel === 'code', 'is-collapsed': codeCollapsed }">
         <Button
           v-if="codeCollapsed"
@@ -1167,6 +1231,24 @@ const { list: shortcutsList } = useShortcuts([
           />
         </div>
       </section>
+      </template>
+
+      <section v-else class="variation-stage" :class="{ 'mobile-active': mobilePanel !== 'chat' }">
+        <VariationProgress
+          v-if="variationState.mode === 'variations-running'"
+          :phase="variationState.phase"
+          :candidates="variationState.candidates"
+          :grading-mode="variationState.gradingMode"
+        />
+        <VariationComparison
+          v-else-if="variationFinalists.length === 2"
+          :finalists="(variationFinalists as [VariationFinalist, VariationFinalist])"
+          :selecting-candidate-id="variationGeneration.selectingCandidateId.value"
+          :error="variationError"
+          :bridge-enabled="highLevelStore.connection.connected"
+          @select="chooseFinalist"
+        />
+      </section>
     </section>
 
     <Dialog v-model:open="snapshotOpen">
@@ -1191,6 +1273,7 @@ const { list: shortcutsList } = useShortcuts([
           :rename-error="snapshotRenameError"
           @restore="restoreSnapshot"
           @compare="toggleSnapshotCompare"
+          @compare-variation="openVariationComparison({ variationSetId: $event })"
           @edit-field="editSnapshotField"
         />
       </DialogContent>
