@@ -9,6 +9,8 @@ export type GenerationContext = {
   }
   files: Record<string, string>
   recentMessages: Array<{ role: 'user' | 'assistant'; content: string }>
+  /** The snapshot the caller's workspace is based on; a variation set records it to detect stale selections. */
+  latestSnapshotId?: string
 }
 
 export class GenerationLockedError extends Error {}
@@ -130,6 +132,7 @@ export async function loadGenerationContext(uid: string, projectId: string): Pro
       description: String(project.get('description') ?? '').slice(0, 2_000),
       locationId: typeof project.get('locationId') === 'string' ? project.get('locationId') : null,
     },
+    latestSnapshotId,
     files,
     recentMessages: messages.docs.flatMap((document) => {
       const role = document.get('role')

@@ -20,6 +20,20 @@ describe('API v1 routing', () => {
     expect(allowedApiV1Methods('/v1/projects/p1/files')).toEqual(['PUT'])
   })
 
+  it('routes owner-only variation-set reads and selections', () => {
+    expect(resolveApiV1Route('GET', '/v1/projects/p1/variation-sets/v1')).toEqual({
+      target: 'projectVariationSet',
+      params: { projectId: 'p1', variationSetId: 'v1' },
+    })
+    expect(resolveApiV1Route('POST', '/v1/projects/p1/variation-sets/v1/selection')?.target).toBe('selectVariation')
+    expect(resolveApiV1Route('POST', '/v1/projects/p1/variation-sets/v1/selection')?.params).toEqual({
+      projectId: 'p1',
+      variationSetId: 'v1',
+    })
+    expect(allowedApiV1Methods('/v1/projects/p1/variation-sets/v1')).toEqual(['GET'])
+    expect(resolveApiV1Route('DELETE', '/v1/projects/p1/variation-sets/v1')).toBeUndefined()
+  })
+
   it('does not route unsupported methods or unknown resources', () => {
     expect(resolveApiV1Route('DELETE', '/v1/projects/p1/files')).toBeUndefined()
     expect(resolveApiV1Route('GET', '/v1/nope')).toBeUndefined()

@@ -8,6 +8,8 @@ export type ApiV1Target =
   | 'updateSnapshot'
   | 'restoreSnapshot'
   | 'projectState'
+  | 'projectVariationSet'
+  | 'selectVariation'
   | 'hlOAuthStart'
   | 'hlConnectionStatus'
   | 'integrationStatus'
@@ -27,6 +29,8 @@ const routes: RouteDefinition[] = [
   { method: 'GET', pattern: /^\/v1\/projects\/([^/]+)\/snapshots\/([^/]+)\/files$/, keys: ['projectId', 'snapshotId'], target: 'projectSnapshotFiles' },
   { method: 'PATCH', pattern: /^\/v1\/projects\/([^/]+)\/snapshots\/([^/]+)$/, keys: ['projectId', 'snapshotId'], target: 'updateSnapshot' },
   { method: 'POST', pattern: /^\/v1\/projects\/([^/]+)\/snapshots\/([^/]+)\/restorations$/, keys: ['projectId', 'snapshotId'], target: 'restoreSnapshot' },
+  { method: 'GET', pattern: /^\/v1\/projects\/([^/]+)\/variation-sets\/([^/]+)$/, keys: ['projectId', 'variationSetId'], target: 'projectVariationSet' },
+  { method: 'POST', pattern: /^\/v1\/projects\/([^/]+)\/variation-sets\/([^/]+)\/selection$/, keys: ['projectId', 'variationSetId'], target: 'selectVariation' },
   { method: 'POST', pattern: /^\/v1\/integrations\/highlevel\/authorizations$/, keys: [], target: 'hlOAuthStart' },
   { method: 'GET', pattern: /^\/v1\/integrations\/highlevel\/connection$/, keys: [], target: 'hlConnectionStatus' },
   { method: 'GET', pattern: /^\/v1\/integrations\/status$/, keys: [], target: 'integrationStatus' },

@@ -53,6 +53,35 @@ export function buildApplicationEvents(
   return { events, generationId, snapshotId }
 }
 
+/**
+ * Finalist transfer reuses the same chunking and SHA-256 integrity contract as a single
+ * generation, but tags every frame with the candidate it belongs to so the client can keep two
+ * file sets isolated without touching active workspace files.
+ */
+export function buildFinalistFileEvents(
+  candidateId: string,
+  files: Record<string, string>,
+  chunkSize = 160,
+) {
+  const events: GenerationEvent[] = []
+  for (const path of ['index.html', 'styles.css', 'app.js']) {
+    const content = files[path]
+    if (typeof content !== 'string') continue
+    events.push({ type: 'finalist_file_start', candidateId, path, language: languageFor(path) })
+    for (let index = 0; index < content.length; index += chunkSize) {
+      events.push({ type: 'finalist_file_delta', candidateId, path, delta: content.slice(index, index + chunkSize) })
+    }
+    events.push({
+      type: 'finalist_file_complete',
+      candidateId,
+      path,
+      size: content.length,
+      sha256: createHash('sha256').update(content).digest('hex'),
+    })
+  }
+  return events
+}
+
 export const applicationJsonSchema = {
   type: 'object',
   additionalProperties: false,

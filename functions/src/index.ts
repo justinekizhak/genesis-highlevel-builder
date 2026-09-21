@@ -3,7 +3,15 @@ import { getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
 import { onRequest } from 'firebase-functions/v2/https'
 import { z } from 'zod'
-import { buildApplicationEvents } from './generate/application.js'
+import { buildApplicationEvents, buildFinalistFileEvents } from './generate/application.js'
+import { planGeneration } from './generate/variation-planner.js'
+import { InsufficientVariationCandidatesError, runVariationGeneration } from './generate/variation-orchestrator.js'
+import {
+  loadVariationSet,
+  persistVariationFinalists,
+  selectVariationFinalist,
+  VariationSelectionConflictError,
+} from './generate/variation-persistence.js'
 import { generateWithOpenAi, openAiApiKey, openAiModel, selectableOpenAiModels } from './generate/openai.js'
 import {
   acquireGenerationLock,
@@ -39,7 +47,7 @@ import { AuthenticationError, requireFirebaseUser } from './http/auth.js'
 import { allowedApiV1Methods, resolveApiV1Route, type ApiV1Target } from './http/api-v1.js'
 import { applyCors } from './http/cors.js'
 import { enforceRateLimit, RateLimitError } from './http/rate-limit.js'
-import { serializeSse } from './shared/protocol.js'
+import { serializeSse, type GenerationEvent } from './shared/protocol.js'
 
 initializeApp()
 
@@ -75,6 +83,17 @@ const projectFilesSchema = z.object({
   }).strict(),
 }).strict()
 
+const variationSetSchema = z.object({
+  projectId: z.string().trim().min(1).max(128),
+  variationSetId: z.string().trim().min(1).max(128),
+}).strict()
+
+const variationSelectionSchema = z.object({
+  projectId: z.string().trim().min(1).max(128),
+  variationSetId: z.string().trim().min(1).max(128),
+  candidateId: z.string().trim().min(1).max(128),
+}).strict()
+
 const restoreSnapshotSchema = z.object({
   projectId: z.string().trim().min(1).max(128),
   snapshotId: z.string().trim().min(1).max(128),
@@ -97,6 +116,7 @@ function httpError(response: Parameters<typeof applyCors>[1], cause: unknown) {
   const status = cause instanceof AuthenticationError ? 401
     : cause instanceof RateLimitError ? 429
     : cause instanceof GenerationLockedError ? 409
+    : cause instanceof VariationSelectionConflictError ? 409
     : 400
   if (cause instanceof RateLimitError) response.setHeader('Retry-After', String(cause.retryAfterSeconds))
   response.status(status).json({ error: message })
@@ -111,8 +131,16 @@ export const healthz = onRequest({ region: 'us-central1', cors: false }, (reques
   response.json({ status: 'ok', service: 'genesis-functions', timestamp: new Date().toISOString() })
 })
 
+/** A variation batch costs four generation units; a single request costs one. */
+async function enforceGenerationQuotas(uid: string, weight: number) {
+  await enforceRateLimit(uid, 'generate-minute', 5, 60, "You're generating too quickly. Wait about a minute and try again.", weight)
+  await enforceRateLimit(uid, 'generate-day', 50, 86_400, "You've reached today's generation limit (50). Try again tomorrow.", weight)
+}
+
 export const generateApp = onRequest(
-  { region: 'us-central1', timeoutSeconds: 300, memory: '512MiB', cors: false, secrets: [openAiApiKey] },
+  // The multi-variant branch generates four candidates at concurrency two and then grades them,
+  // so the streaming route needs the longer ceiling; memory stays at the current allocation.
+  { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB', cors: false, secrets: [openAiApiKey] },
   async (request, response) => {
     let partialGeneration: {
       uid: string
@@ -151,8 +179,6 @@ export const generateApp = onRequest(
       await acquireGenerationLock(user.uid, input.projectId, generationId)
       lockHeld = true
       lockedProject = { uid: user.uid, projectId: input.projectId, generationId }
-      await enforceRateLimit(user.uid, 'generate-minute', 5, 60, "You're generating too quickly. Wait about a minute and try again.")
-      await enforceRateLimit(user.uid, 'generate-day', 50, 86_400, "You've reached today's generation limit (50). Try again tomorrow.")
       await persistUserMessage({ uid: user.uid, projectId: input.projectId, prompt: input.prompt, generationId })
       logger.info('Starting application generation', {
         projectId: input.projectId,
@@ -191,7 +217,12 @@ export const generateApp = onRequest(
         provider: 'openai',
         model: generationModel,
       }))
-      try {
+      const writeEvent = (event: GenerationEvent) => {
+        if (!response.destroyed) response.write(serializeSse(event))
+      }
+
+      /** The existing single-generation path, unchanged after `generation_started`. */
+      const runSingleGeneration = async () => {
         const streamParser = new StructuredApplicationStream()
         partialGeneration = {
           uid: user.uid,
@@ -204,11 +235,9 @@ export const generateApp = onRequest(
           currentFiles,
         }
         const application = await generateWithOpenAi(input.prompt, currentFiles, abortController.signal, (delta) => {
-          for (const event of streamParser.push(delta)) {
-            if (!response.destroyed) response.write(serializeSse(event))
-          }
+          for (const event of streamParser.push(delta)) writeEvent(event)
         }, generationContext, generationModel, (usage) => {
-          if (!response.destroyed) response.write(serializeSse({ type: 'usage', ...usage }))
+          writeEvent({ type: 'usage', ...usage })
         })
         validateGeneratedApplication(application)
         const built = buildApplicationEvents(application, 160, { generationId })
@@ -225,10 +254,68 @@ export const generateApp = onRequest(
         generationPersisted = true
 
         if (!response.destroyed) {
-          response.write(serializeSse({ type: 'snapshot_created', snapshotId: built.snapshotId }))
-          response.write(serializeSse({ type: 'complete', generationId }))
+          writeEvent({ type: 'snapshot_created', snapshotId: built.snapshotId })
+          writeEvent({ type: 'complete', generationId })
           response.end()
         }
+      }
+
+      /**
+       * Candidate code stays in function memory until two finalists are persisted; only then do
+       * finalist file sets stream, and the batch ends on `variation_complete` rather than `complete`.
+       */
+      const runAndPersistVariations = async (plan: Awaited<ReturnType<typeof planGeneration>>) => {
+        const run = await runVariationGeneration({
+          prompt: input.prompt,
+          plan,
+          currentFiles,
+          model: generationModel,
+          signal: abortController.signal,
+          onEvent: writeEvent,
+          context: generationContext,
+        })
+        await persistVariationFinalists({
+          uid: user.uid,
+          projectId: input.projectId,
+          variationSetId: run.variationSetId,
+          generationId,
+          prompt: input.prompt,
+          baseSnapshotId: generationContext.latestSnapshotId,
+          model: generationModel,
+          gradingMode: run.gradingMode,
+          eligibleCount: run.eligibleCount,
+          aggregateUsage: run.aggregateUsage,
+          finalists: run.finalists,
+        })
+        generationPersisted = true
+
+        writeEvent({ type: 'usage', ...run.aggregateUsage })
+        writeEvent({
+          type: 'finalist_metadata',
+          variationSetId: run.variationSetId,
+          finalists: run.finalists.map((finalist) => ({
+            candidateId: finalist.candidateId,
+            displayName: finalist.displayName,
+            summary: finalist.summary,
+            strengths: finalist.strengths,
+            risks: finalist.risks,
+          })),
+        })
+        for (const finalist of run.finalists) {
+          for (const event of buildFinalistFileEvents(finalist.candidateId, finalist.files)) writeEvent(event)
+        }
+        writeEvent({ type: 'finalists_ready', variationSetId: run.variationSetId })
+        writeEvent({ type: 'variation_complete', variationSetId: run.variationSetId })
+        if (!response.destroyed) response.end()
+      }
+
+      try {
+        writeEvent({ type: 'variation_planning_started' })
+        const plan = await planGeneration(input.prompt, generationContext, abortController.signal)
+        const useVariations = plan.mode === 'variations'
+        await enforceGenerationQuotas(user.uid, useVariations ? 4 : 1)
+        if (useVariations) await runAndPersistVariations(plan)
+        else await runSingleGeneration()
       } finally {
         clearInterval(heartbeat)
         stopWatchingCancellation?.()
@@ -267,6 +354,7 @@ export const generateApp = onRequest(
         : cause instanceof Error ? cause.message : 'Application generation failed.'
       const code = generationCancellationRequested
         ? 'GENERATION_CANCELLED'
+        : cause instanceof InsufficientVariationCandidatesError ? 'VARIATION_INSUFFICIENT_CANDIDATES'
         : cause instanceof UnsafeGenerationError ? 'UNSAFE_OUTPUT' : 'GENERATION_FAILED'
       response.write(serializeSse({ type: 'error', code, message, recoverable: true }))
       response.end()
@@ -368,6 +456,37 @@ export const projectState = onRequest({ region: 'us-central1', cors: false }, as
     const user = await requireFirebaseUser(request)
     const projectId = z.string().trim().min(1).max(128).parse(request.params.projectId ?? request.query.projectId)
     response.json(await loadProjectState(user.uid, projectId))
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
+
+export const projectVariationSet = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const input = variationSetSchema.parse({ ...request.query, ...request.params })
+    response.json(await loadVariationSet(user.uid, input.projectId, input.variationSetId))
+  } catch (cause) {
+    httpError(response, cause)
+  }
+})
+
+export const selectVariation = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+  applyCors(request, response)
+  if (request.method === 'OPTIONS') return void response.status(204).end()
+  if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
+  try {
+    const user = await requireFirebaseUser(request)
+    const input = variationSelectionSchema.parse({ ...request.body, ...request.params })
+    response.json(await selectVariationFinalist({
+      uid: user.uid,
+      projectId: input.projectId,
+      variationSetId: input.variationSetId,
+      candidateId: input.candidateId,
+    }))
   } catch (cause) {
     httpError(response, cause)
   }
@@ -527,6 +646,8 @@ const apiV1Handlers: Record<ApiV1Target, (request: Parameters<typeof healthz>[0]
   updateSnapshot,
   restoreSnapshot,
   projectState,
+  projectVariationSet,
+  selectVariation,
   hlOAuthStart,
   hlConnectionStatus,
   integrationStatus,
@@ -535,7 +656,8 @@ const apiV1Handlers: Record<ApiV1Target, (request: Parameters<typeof healthz>[0]
 
 /** Versioned REST façade; named Functions remain available as compatibility aliases. */
 export const apiV1 = onRequest(
-  { region: 'us-central1', timeoutSeconds: 300, memory: '512MiB', cors: false, secrets: [openAiApiKey, highLevelClientSecret] },
+  // The facade dispatches the streaming generation route, so it needs the same longer ceiling.
+  { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB', cors: false, secrets: [openAiApiKey, highLevelClientSecret] },
   async (request, response) => {
     applyCors(request, response)
     if (request.method === 'OPTIONS') return void response.status(204).end()
