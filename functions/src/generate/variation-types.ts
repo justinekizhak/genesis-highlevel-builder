@@ -98,3 +98,128 @@ export const generationPlanJsonSchema = {
     },
   },
 } as const
+
+export type TokenUsage = {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+}
+
+export const evidencePathSchema = z.enum(['index.html', 'styles.css', 'app.js'])
+
+/** 100-point rubric. Criterion maxima are the weights from the design spec and sum to 100. */
+export const rubricCriteria = {
+  featureFidelity: 30,
+  functionalCorrectness: 25,
+  robustness: 15,
+  usability: 10,
+  accessibility: 10,
+  responsiveness: 5,
+  maintainability: 5,
+} as const
+
+export type RubricCriterion = keyof typeof rubricCriteria
+
+export const rubricSchema = z.object({
+  alias: z.string(),
+  featureFidelity: z.number().int().min(0).max(30),
+  functionalCorrectness: z.number().int().min(0).max(25),
+  robustness: z.number().int().min(0).max(15),
+  usability: z.number().int().min(0).max(10),
+  accessibility: z.number().int().min(0).max(10),
+  responsiveness: z.number().int().min(0).max(5),
+  maintainability: z.number().int().min(0).max(5),
+  strengths: z.array(z.string()).max(3),
+  risks: z.array(z.string()).max(3),
+  evidence: z.array(z.object({ path: evidencePathSchema, detail: z.string() })).max(12),
+}).strict()
+
+export type RubricScore = z.infer<typeof rubricSchema>
+
+export const pairwiseComparisonSchema = z.object({
+  aliasA: z.string(),
+  aliasB: z.string(),
+  winner: z.string(),
+  confidence: z.number().min(0).max(1),
+  evidence: z.string(),
+}).strict()
+
+export type PairwiseComparison = z.infer<typeof pairwiseComparisonSchema>
+
+export const pairwiseResultSchema = z.object({
+  comparisons: z.array(pairwiseComparisonSchema).max(6),
+}).strict()
+
+export type CandidateScore = {
+  alias: string
+  rubric: RubricScore
+  deterministicScore: number
+}
+
+export type RankedCandidate = {
+  alias: string
+  candidateId?: string
+  internalRank: number
+  rubricScore: number
+  pairwiseScore: number
+  combinedScore: number
+  rubric?: RubricScore
+  scoreBreakdown: Record<string, number>
+  strengths: string[]
+  risks: string[]
+}
+
+export type GradingMode = 'full' | 'deterministic_fallback'
+
+const rubricJsonProperties = Object.fromEntries(
+  Object.entries(rubricCriteria).map(([criterion, maximum]) => [criterion, { type: 'integer', minimum: 0, maximum }]),
+)
+
+export const rubricJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['alias', ...Object.keys(rubricCriteria), 'strengths', 'risks', 'evidence'],
+  properties: {
+    alias: { type: 'string' },
+    ...rubricJsonProperties,
+    strengths: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 240 } },
+    risks: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 240 } },
+    evidence: {
+      type: 'array',
+      maxItems: 12,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path', 'detail'],
+        properties: {
+          path: { type: 'string', enum: ['index.html', 'styles.css', 'app.js'] },
+          detail: { type: 'string', maxLength: 400 },
+        },
+      },
+    },
+  },
+} as const
+
+export const pairwiseJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['comparisons'],
+  properties: {
+    comparisons: {
+      type: 'array',
+      maxItems: 6,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['aliasA', 'aliasB', 'winner', 'confidence', 'evidence'],
+        properties: {
+          aliasA: { type: 'string' },
+          aliasB: { type: 'string' },
+          winner: { type: 'string' },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+          evidence: { type: 'string', maxLength: 400 },
+        },
+      },
+    },
+  },
+} as const
