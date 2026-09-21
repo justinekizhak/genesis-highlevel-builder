@@ -1,4 +1,3 @@
-import { defineString } from 'firebase-functions/params'
 import { initializeApp } from 'firebase-admin/app'
 import { getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { logger } from 'firebase-functions'
@@ -51,12 +50,6 @@ import { enforceRateLimit, RateLimitError } from './http/rate-limit.js'
 import { serializeSse, type GenerationEvent } from './shared/protocol.js'
 
 initializeApp()
-
-/**
- * Rollout gate for the four-candidate variation branch. Disabled by default: when it is not
- * exactly "true", a variations-classified plan is coerced back to the existing single stream.
- */
-export const enableMultipleVariations = defineString('ENABLE_MULTIPLE_VARIATIONS', { default: 'false' })
 
 const generateRequestSchema = z.object({
   prompt: z.string().trim().min(3).max(4_000),
@@ -319,7 +312,7 @@ export const generateApp = onRequest(
       try {
         writeEvent({ type: 'variation_planning_started' })
         const plan = await planGeneration(input.prompt, generationContext, abortController.signal)
-        const useVariations = plan.mode === 'variations' && enableMultipleVariations.value() === 'true'
+        const useVariations = plan.mode === 'variations'
         await enforceGenerationQuotas(user.uid, useVariations ? 4 : 1)
         if (useVariations) await runAndPersistVariations(plan)
         else await runSingleGeneration()

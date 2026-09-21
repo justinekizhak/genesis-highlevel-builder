@@ -160,7 +160,6 @@ function makeRequest(body: Record<string, unknown> = {}, overrides: Record<strin
 beforeEach(() => {
   vi.clearAllMocks()
   process.env.OPENAI_API_KEY = 'test-key'
-  process.env.ENABLE_MULTIPLE_VARIATIONS = 'true'
   loadProjectState.mockResolvedValue({ files: null, messages: [] })
   loadGenerationContext.mockResolvedValue({
     project: { name: 'CRM', description: '', locationId: 'location-1' },
@@ -338,22 +337,6 @@ describe('generateApp branching', () => {
     await generateApp(makeRequest() as never, makeResponse() as never)
 
     expect(persistPartialGeneration).not.toHaveBeenCalled()
-  })
-
-  it('coerces a variation plan to the single branch while the rollout flag is off', async () => {
-    process.env.ENABLE_MULTIPLE_VARIATIONS = 'false'
-    planGeneration.mockResolvedValue(variationPlan)
-    const { generateApp } = await import('./index.js')
-    const response = makeResponse()
-
-    await generateApp(makeRequest() as never, response as never)
-
-    const types = response.events.map((event: GenerationEvent) => event.type)
-    expect(types).toContain('file_delta')
-    expect(types).toContain('complete')
-    expect(runVariationGeneration).not.toHaveBeenCalled()
-    expect(persistVariationFinalists).not.toHaveBeenCalled()
-    expect(enforceRateLimit).toHaveBeenCalledWith('user-1', 'generate-minute', expect.any(Number), 60, expect.anything(), 1)
   })
 
   it('announces planning before it classifies the request', async () => {

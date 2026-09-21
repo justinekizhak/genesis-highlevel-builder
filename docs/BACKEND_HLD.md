@@ -36,7 +36,7 @@ There is one current three-file state for fast loading and an append-only snapsh
 
 ## 4b. How multiple UI variations work
 
-A small structured planning call runs in front of every generation and classifies the request as a single generation or a variation request. Anything that fails, times out, returns invalid structured output, or classifies a variation request below 0.8 confidence falls back to the single path, so planning can never block ordinary generation. The whole branch is gated behind `ENABLE_MULTIPLE_VARIATIONS`, which is disabled by default.
+A small structured planning call runs in front of every generation and classifies the request as a single generation or a variation request. Anything that fails, times out, returns invalid structured output, or classifies a variation request below 0.8 confidence falls back to the single path, so planning can never block ordinary generation.
 
 A variation request generates exactly four candidates from one shared feature contract and four differentiated briefs, at a concurrency of two with all-settled semantics: one failed candidate never cancels a viable sibling. All four candidates use the same user-selected model and reasoning effort, so the comparison measures the generated applications rather than unequal model budgets.
 

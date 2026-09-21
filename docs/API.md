@@ -52,7 +52,7 @@ Clients must treat an EOF without a terminal event as an interrupted generation.
 
 ## Multiple UI variations
 
-A planning call classifies every request before generation begins. An ordinary request keeps the single stream above unchanged. A request that asks for alternatives — "create multiple variations", "show me a few directions", "give me different versions" — enters the variation branch, which is OpenAI-only and gated behind `ENABLE_MULTIPLE_VARIATIONS`.
+A planning call classifies every request before generation begins. An ordinary request keeps the single stream above unchanged. A request that asks for alternatives — "create multiple variations", "show me a few directions", "give me different versions" — enters the variation branch, which is OpenAI-only.
 
 The variation branch generates exactly four candidates at a concurrency of two, qualifies and grades them while their code stays in function memory, persists exactly the top two, and streams only those two file sets. Discarded candidate code is never persisted and never reaches the client.
 
