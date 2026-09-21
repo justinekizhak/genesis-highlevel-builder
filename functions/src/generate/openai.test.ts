@@ -150,6 +150,40 @@ describe('OpenAI streaming transport', () => {
     expect(requestBody.instructions).not.toContain('Exactly one per screen')
   })
 
+  it('appends a variation directive after the raw request without altering the base system prompt', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    createMock.mockResolvedValue(eventsOf(deltaEvents(JSON.stringify(application), 50)))
+
+    await generateWithOpenAi('Build contacts', {}, undefined, undefined, undefined, 'gpt-5.4', undefined, {
+      featureContract: { requiredFeatures: ['Contact search'], optionalFeatures: [], invariants: [] },
+      variationBrief: {
+        id: 'a',
+        title: 'Direction a',
+        designIntent: 'Dense operational table',
+        informationArchitecture: 'Single table',
+        interactionModel: 'Inline edit',
+        visualDirection: 'Warm charcoal',
+        density: 'compact',
+        differentiators: ['one', 'two', 'three'],
+      },
+    })
+
+    const requestBody = createMock.mock.calls[0]?.[0]
+    expect(requestBody.instructions).toContain('MANDATORY VUE RUNTIME INVARIANT')
+    expect(requestBody.instructions).not.toContain('Warm charcoal')
+    const modelInput = requestBody.input as string
+    expect(modelInput.indexOf('BEGIN GENESIS VARIATION DIRECTIVE')).toBeGreaterThan(modelInput.indexOf('User request:'))
+    expect(modelInput).toContain('Warm charcoal')
+    expect(modelInput).toContain('END GENESIS VARIATION DIRECTIVE')
+  })
+
+  it('omits the variation directive entirely for a single generation', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    createMock.mockResolvedValue(eventsOf(deltaEvents(JSON.stringify(application), 50)))
+    await generateWithOpenAi('Build contacts', {})
+    expect(createMock.mock.calls[0]?.[0].input).not.toContain('GENESIS VARIATION DIRECTIVE')
+  })
+
   it('exposes a reusable structured-response helper that never carries the application system prompt', async () => {
     process.env.OPENAI_API_KEY = 'test-key'
     createMock.mockResolvedValue({ output_text: '{"ok":true}' })

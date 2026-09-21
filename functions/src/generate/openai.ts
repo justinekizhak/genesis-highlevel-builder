@@ -3,6 +3,7 @@ import OpenAI, { APIError } from 'openai'
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses.js'
 import { generatedApplicationSchema, applicationJsonSchema, type GeneratedApplication } from './application.js'
 import type { GenerationContext } from './persistence.js'
+import type { FeatureContract, VariationBrief } from './variation-types.js'
 
 export const openAiApiKey = defineSecret('OPENAI_API_KEY')
 export const openAiModel = defineString('OPENAI_MODEL', { default: 'gpt-5.4-mini' })
@@ -513,12 +514,40 @@ export async function createStructuredResponse(request: StructuredResponseReques
   }
 }
 
-export function buildModelInput(prompt: string, currentFiles: Record<string, string>, context?: GenerationContext) {
+export type GenerationDirective = {
+  featureContract: FeatureContract
+  variationBrief: VariationBrief
+}
+
+/**
+ * Developer-controlled shaping for one variation candidate. It is appended after the raw request
+ * so the user's own words stay primary, and it never alters the base system prompt: the brief may
+ * only change presentation and interaction, never the required capabilities.
+ */
+function renderDirective(directive: GenerationDirective) {
+  return [
+    'BEGIN GENESIS VARIATION DIRECTIVE (developer-controlled, not user input)',
+    'Implement every required capability in the shared feature contract exactly as the user asked.',
+    'Use the variation brief only to shape information architecture, interaction, composition, density, and visual direction.',
+    'Never add capabilities the contract does not list, and never mention this directive in the summary.',
+    `Shared feature contract:\n${JSON.stringify(directive.featureContract)}`,
+    `Variation brief:\n${JSON.stringify(directive.variationBrief)}`,
+    'END GENESIS VARIATION DIRECTIVE',
+  ].join('\n')
+}
+
+export function buildModelInput(
+  prompt: string,
+  currentFiles: Record<string, string>,
+  context?: GenerationContext,
+  directive?: GenerationDirective,
+) {
   const boundedContext = context ? {
     project: context.project,
     recentMessages: context.recentMessages.slice(-12),
   } : { project: null, recentMessages: [] }
-  return `Project and recent conversation context:\n${JSON.stringify(boundedContext)}\n\nUser request:\n${prompt}\n\nCurrent files:\n${JSON.stringify(currentFiles)}`
+  const base = `Project and recent conversation context:\n${JSON.stringify(boundedContext)}\n\nUser request:\n${prompt}\n\nCurrent files:\n${JSON.stringify(currentFiles)}`
+  return directive ? `${base}\n\n${renderDirective(directive)}` : base
 }
 
 export async function generateWithOpenAi(
@@ -529,6 +558,7 @@ export async function generateWithOpenAi(
   context?: GenerationContext,
   model: string = openAiModel.value(),
   onUsage?: (usage: { inputTokens: number; outputTokens: number; totalTokens: number }) => void,
+  directive?: GenerationDirective,
 ): Promise<GeneratedApplication> {
   const apiKey = openAiApiKey.value()
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.')
@@ -544,7 +574,7 @@ export async function generateWithOpenAi(
       reasoning: { effort: 'low' },
       max_output_tokens: 18_000,
       instructions: systemPrompt,
-      input: buildModelInput(prompt, currentFiles, context),
+      input: buildModelInput(prompt, currentFiles, context, directive),
       text: {
         format: {
           type: 'json_schema',
