@@ -201,3 +201,19 @@ test('offers two directions for a variations prompt and activates the chosen one
   // Only after a successful selection do the chosen files reach the editor.
   await expect(page.locator('.file-tree').getByText('app.js')).toBeVisible({ timeout: 20_000 })
 })
+
+test('treats a trailing "with multiple variations" phrase as a whole-app variations request', async ({ page }) => {
+  // Regression test: this exact phrasing was once misread as a request for an in-app appointments
+  // view switcher (mode "single") instead of four whole-dashboard candidates (mode "variations").
+  // The planner's own classification is covered by a backend unit test; this confirms the client
+  // still renders the comparison UI end to end once a variations stream for this prompt arrives.
+  const isMobile = test.info().project.name.startsWith('mobile')
+  await bootstrapWorkspace(page, variationStream)
+  await page.getByLabel('Describe the HighLevel app to generate')
+    .fill('Build a contact dashboard with search and upcoming appointments with multiple variations')
+  await page.getByRole('button', { name: 'Generate app' }).click()
+
+  await expect(page.getByText('Two directions are ready')).toBeVisible({ timeout: 20_000 })
+  if (isMobile) await page.getByRole('tab', { name: 'Direction B' }).click()
+  await expect(page.getByRole('button', { name: 'Use Direction B' })).toBeVisible()
+})
