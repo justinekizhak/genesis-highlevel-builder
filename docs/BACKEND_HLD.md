@@ -34,6 +34,20 @@ Generated code never receives credentials and cannot choose arbitrary URLs. It a
 
 There is one current three-file state for fast loading and an append-only snapshot history for recovery. Generations, manual edits, and interrupted generations can create history entries. A restore first preserves the current state as a backup, then replaces the current files with the selected snapshot.
 
+## 4b. How multiple UI variations work
+
+A small structured planning call runs in front of every generation and classifies the request as a single generation or a variation request. Anything that fails, times out, returns invalid structured output, or classifies a variation request below 0.8 confidence falls back to the single path, so planning can never block ordinary generation. The whole branch is gated behind `ENABLE_MULTIPLE_VARIATIONS`, which is disabled by default.
+
+A variation request generates exactly four candidates from one shared feature contract and four differentiated briefs, at a concurrency of two with all-settled semantics: one failed candidate never cancels a viable sibling. All four candidates use the same user-selected model and reasoning effort, so the comparison measures the generated applications rather than unequal model budgets.
+
+Every completed candidate is qualified deterministically: schema, security, the mandatory Vue runtime, and JavaScript parseability are hard failures, while HighLevel contract use, required states, required features, accessibility, and responsive rules produce cited evidence and a bounded soft score out of 100. At least two candidates must qualify; otherwise the batch ends with `VARIATION_INSUFFICIENT_CANDIDATES` and the active project is left untouched.
+
+Grading is blinded. Candidates are shuffled and given random opaque aliases before anything reaches the grader, and candidate source is delimited as untrusted data rather than instructions. Variation briefs, generation order, model identity, internal rank, and display position never enter a grading prompt. The grader scores each candidate independently against a 100-point rubric, then judges the top three pairwise in one call. The final rank is 70 percent rubric and 30 percent pairwise, with ties resolved by feature fidelity, then functional correctness, then the opaque alias. A transport or parse failure is retried once; a second failure falls back to deterministic ranking and marks the set `deterministic_fallback`.
+
+Only the top two candidates are persisted, as one variation-set document plus exactly two candidate documents, with the project pointed at the pending set in the same commit. Discarded candidate code, briefs, grades, and identifiers are never written. The user chooses a finalist, and only that selection — transactionally, and only while the base snapshot is still current — replaces the active files and creates a normal snapshot. The unselected finalist stays reloadable, and the promoted snapshot links back to its variation set so the comparison can be reopened from history.
+
+A variation batch charges four generation quota units against the same atomic counters a single request charges one unit against, holds the existing project generation lock for the whole batch, and runs under a 540-second function timeout with the existing 512 MiB allocation.
+
 ## 5. How HighLevel events enter Genesis
 
 ![Webhook event flow](diagrams/webhook-event-flow.svg)

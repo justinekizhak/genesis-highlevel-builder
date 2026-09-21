@@ -20,6 +20,7 @@ tags:
   - name: Generations
   - name: Projects
   - name: Snapshots
+  - name: Variations
   - name: Integrations
 security:
   - firebaseBearer: []
@@ -227,6 +228,52 @@ paths:
                   backupSnapshotId: { type: string }
                   files: { $ref: '#/components/schemas/Files' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/variation-sets/{variationSetId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/VariationSetId'
+    get:
+      operationId: getProjectVariationSet
+      tags: [Variations]
+      summary: Load a variation set and its two persisted finalists
+      description: >
+        Owner-only. Reloads a comparison after an interrupted finalist transfer or a page reload
+        without regenerating anything. Internal rank and score breakdowns are never returned.
+      responses:
+        '200':
+          description: The variation set and exactly two finalists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VariationSet' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /v1/projects/{projectId}/variation-sets/{variationSetId}/selection:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+      - $ref: '#/components/parameters/VariationSetId'
+    post:
+      operationId: selectVariationFinalist
+      tags: [Variations]
+      summary: Promote one finalist to the project's active files
+      description: >
+        Atomic and idempotent. The first selection requires the project's latestSnapshotId to still
+        equal the set's baseSnapshotId; a mismatch returns 409 rather than overwriting newer work.
+        A later switch to the other finalist preserves initialSelectedCandidateId, creates a backup
+        snapshot, and returns 409 while another generation lock is active.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VariationSelectionRequest' }
+      responses:
+        '200':
+          description: The promoted snapshot and the activated files.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VariationSelectionResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /v1/integrations/status:
     get:
       operationId: getIntegrationStatus
@@ -314,6 +361,11 @@ components:
       in: path
       required: true
       schema: { type: string, minLength: 1, maxLength: 128 }
+    VariationSetId:
+      name: variationSetId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 128 }
   responses:
     BadRequest:
       description: Request validation or business precondition failed.
@@ -379,6 +431,9 @@ components:
       required: [files, messages]
       properties:
         snapshotId: { type: string }
+        pendingVariationSetId:
+          type: string
+          description: Present while a ready variation set is still awaiting the user's selection.
         files:
           oneOf:
             - { $ref: '#/components/schemas/Files' }
@@ -397,9 +452,57 @@ components:
         label: { type: string }
         provider: { type: string }
         model: { type: string }
-        kind: { type: string, enum: [generation, manual, partial, restore-backup] }
+        kind: { type: string, enum: [generation, manual, partial, restore-backup, backup] }
+        variationSetId:
+          type: string
+          description: Present only on a snapshot promoted from a variation finalist.
+        variationCandidateId:
+          type: string
+          description: Present only on a snapshot promoted from a variation finalist.
         fileCount: { type: integer, minimum: 0 }
         createdAt: { type: string, format: date-time }
+    VariationFinalist:
+      type: object
+      required: [candidateId, displayName, summary, strengths, risks, files]
+      properties:
+        candidateId: { type: string }
+        displayName: { type: string, enum: ['Direction A', 'Direction B'] }
+        summary: { type: string }
+        strengths: { type: array, maxItems: 3, items: { type: string } }
+        risks: { type: array, maxItems: 3, items: { type: string } }
+        files: { $ref: '#/components/schemas/Files' }
+    VariationSet:
+      type: object
+      required: [variationSetId, status, gradingMode, prompt, finalists]
+      properties:
+        variationSetId: { type: string }
+        status: { type: string, enum: [ready, selected, failed, cancelled] }
+        gradingMode: { type: string, enum: [full, deterministic_fallback] }
+        prompt: { type: string }
+        baseSnapshotId: { type: string }
+        initialSelectedCandidateId:
+          type: string
+          description: Immutable once the first selection succeeds.
+        activeCandidateId:
+          type: string
+          description: The finalist currently promoted into the project's active files.
+        finalists:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: { $ref: '#/components/schemas/VariationFinalist' }
+    VariationSelectionRequest:
+      type: object
+      additionalProperties: false
+      required: [candidateId]
+      properties:
+        candidateId: { type: string, minLength: 1, maxLength: 128 }
+    VariationSelectionResponse:
+      type: object
+      required: [snapshotId, files]
+      properties:
+        snapshotId: { type: string }
+        files: { $ref: '#/components/schemas/Files' }
     HighLevelConnection:
       type: object
       required: [connected]

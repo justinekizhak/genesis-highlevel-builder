@@ -340,6 +340,22 @@ describe('generateApp branching', () => {
     expect(persistPartialGeneration).not.toHaveBeenCalled()
   })
 
+  it('coerces a variation plan to the single branch while the rollout flag is off', async () => {
+    process.env.ENABLE_MULTIPLE_VARIATIONS = 'false'
+    planGeneration.mockResolvedValue(variationPlan)
+    const { generateApp } = await import('./index.js')
+    const response = makeResponse()
+
+    await generateApp(makeRequest() as never, response as never)
+
+    const types = response.events.map((event: GenerationEvent) => event.type)
+    expect(types).toContain('file_delta')
+    expect(types).toContain('complete')
+    expect(runVariationGeneration).not.toHaveBeenCalled()
+    expect(persistVariationFinalists).not.toHaveBeenCalled()
+    expect(enforceRateLimit).toHaveBeenCalledWith('user-1', 'generate-minute', expect.any(Number), 60, expect.anything(), 1)
+  })
+
   it('announces planning before it classifies the request', async () => {
     const { generateApp } = await import('./index.js')
     const response = makeResponse()
