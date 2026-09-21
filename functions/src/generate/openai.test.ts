@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { APIError } from 'openai'
-import { buildModelInput, generateWithOpenAi } from './openai.js'
+import { buildModelInput, createStructuredResponse, generateWithOpenAi } from './openai.js'
 
 const application = {
   summary: 'Built a contact dashboard.',
@@ -148,6 +148,52 @@ describe('OpenAI streaming transport', () => {
     expect(requestBody.instructions).toContain('at most two framed surface groups')
     expect(requestBody.instructions).not.toContain('Two type sizes only')
     expect(requestBody.instructions).not.toContain('Exactly one per screen')
+  })
+
+  it('exposes a reusable structured-response helper that never carries the application system prompt', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    createMock.mockResolvedValue({ output_text: '{"ok":true}' })
+
+    const text = await createStructuredResponse({
+      model: 'gpt-5.4-mini',
+      instructions: 'Classify the request.',
+      input: 'Build contacts',
+      schemaName: 'demo_schema',
+      schema: { type: 'object' },
+    })
+
+    expect(text).toBe('{"ok":true}')
+    const requestBody = createMock.mock.calls[0]?.[0]
+    expect(requestBody.stream).toBe(false)
+    expect(requestBody.instructions).toBe('Classify the request.')
+    expect(requestBody.instructions).not.toContain('MANDATORY VUE RUNTIME INVARIANT')
+    expect(requestBody.text.format).toMatchObject({ type: 'json_schema', name: 'demo_schema', strict: true })
+  })
+
+  it('reads structured output from the response output array when output_text is absent', async () => {
+    process.env.OPENAI_API_KEY = 'test-key'
+    createMock.mockResolvedValue({ output: [{ content: [{ type: 'output_text', text: '{"a":1}' }] }] })
+
+    await expect(createStructuredResponse({
+      model: 'gpt-5.4-mini',
+      instructions: 'x',
+      input: 'y',
+      schemaName: 'demo_schema',
+      schema: { type: 'object' },
+    })).resolves.toBe('{"a":1}')
+  })
+
+  it('maps a structured-response API failure to the friendly message', async () => {
+    process.env.OPENAI_API_KEY = 'expired-key'
+    createMock.mockRejectedValue(new APIError(401, { message: 'Incorrect API key provided.' }, 'Incorrect API key provided.', new Headers()))
+
+    await expect(createStructuredResponse({
+      model: 'gpt-5.4-mini',
+      instructions: 'x',
+      input: 'y',
+      schemaName: 'demo_schema',
+      schema: { type: 'object' },
+    })).rejects.toThrow('OpenAI rejected OPENAI_API_KEY (401)')
   })
 
   it('explains how to recover when OpenAI rejects the configured key', async () => {

@@ -8,7 +8,7 @@
     "build": "pnpm --dir frontend build && pnpm --dir functions build",
     "test": "pnpm --dir frontend test && pnpm --dir functions test",
     "test:ui": "pnpm --dir frontend test:ui",
-    "dev:frontend": "pnpm --dir frontend dev",
+    "dev:frontend": "pnpm --dir frontend dev --host",
     "dev:emulators": "sh scripts/run-emulators.sh",
     "docs:diagrams": "node scripts/generate-doc-diagrams.mjs",
     "emulators:export": "pnpm dlx firebase-tools emulators:export .firebase/emulator-data --project jk-ai-app-builder --force",

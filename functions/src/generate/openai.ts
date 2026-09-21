@@ -450,6 +450,69 @@ function errorEventDetail(event: ResponseStreamEvent): FriendlyErrorDetail {
   return {}
 }
 
+export type StructuredResponseRequest = {
+  model: string
+  instructions: string
+  input: string
+  schemaName: string
+  schema: unknown
+  reasoningEffort?: 'low' | 'medium' | 'high'
+  maxOutputTokens?: number
+  signal?: AbortSignal
+}
+
+function readResponseText(response: unknown): string {
+  const payload = response as {
+    output_text?: unknown
+    output?: Array<{ content?: Array<{ type?: string; text?: unknown }> }>
+  }
+  if (typeof payload?.output_text === 'string') return payload.output_text
+  const parts: string[] = []
+  for (const item of payload?.output ?? []) {
+    for (const content of item.content ?? []) {
+      if (typeof content.text === 'string') parts.push(content.text)
+    }
+  }
+  return parts.join('')
+}
+
+/**
+ * Non-streaming structured Responses call shared by the planner and the grader. Kept beside the
+ * generator so every OpenAI request funnels through the same client construction and the same
+ * friendly error mapping, without dragging the application system prompt along.
+ */
+export async function createStructuredResponse(request: StructuredResponseRequest): Promise<string> {
+  const apiKey = openAiApiKey.value()
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.')
+  const client = new OpenAI({ apiKey })
+  try {
+    const response = await client.responses.create({
+      model: request.model,
+      stream: false,
+      store: false,
+      reasoning: { effort: request.reasoningEffort ?? 'low' },
+      max_output_tokens: request.maxOutputTokens ?? 6_000,
+      instructions: request.instructions,
+      input: request.input,
+      text: {
+        format: {
+          type: 'json_schema',
+          name: request.schemaName,
+          strict: true,
+          schema: request.schema as never,
+        },
+      },
+    } as never, { signal: request.signal })
+    return readResponseText(response)
+  } catch (error) {
+    if (error instanceof APIError) {
+      const body = error.error as { message?: string } | null | undefined
+      throw new Error(friendlyOpenAiError(error.status, { message: body?.message ?? error.message, code: error.code }))
+    }
+    throw error
+  }
+}
+
 export function buildModelInput(prompt: string, currentFiles: Record<string, string>, context?: GenerationContext) {
   const boundedContext = context ? {
     project: context.project,
