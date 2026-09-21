@@ -1,5 +1,17 @@
-import type { ChatMessage, GeneratedFile, GenerationEvent, GenerationModel, ProjectSnapshot } from '@/types/generation'
+import type {
+  ChatMessage,
+  GeneratedFile,
+  GenerationEvent,
+  GenerationModel,
+  ProjectSnapshot,
+  VariationSetPayload,
+} from '@/types/generation'
 import { requireApiV1BaseUrl, requireStreamingApiV1BaseUrl } from './api'
+
+/** `variation_complete` replaces `complete` for a multi-variant batch, so both end a stream. */
+function isTerminalEvent(event: GenerationEvent) {
+  return event.type === 'complete' || event.type === 'error' || event.type === 'variation_complete'
+}
 
 type GenerateOptions = {
   prompt: string
@@ -35,7 +47,7 @@ export async function consumeGenerationStream(response: Response, onEvent: (even
       const event = parseSseBlock(buffer.slice(0, boundary))
       if (event) {
         onEvent(event)
-        if (event.type === 'complete' || event.type === 'error') sawTerminal = true
+        if (isTerminalEvent(event)) sawTerminal = true
       }
       buffer = buffer.slice(boundary + 2)
       boundary = buffer.indexOf('\n\n')
@@ -46,7 +58,7 @@ export async function consumeGenerationStream(response: Response, onEvent: (even
     const event = parseSseBlock(buffer)
     if (event) {
       onEvent(event)
-      if (event.type === 'complete' || event.type === 'error') sawTerminal = true
+      if (isTerminalEvent(event)) sawTerminal = true
     }
   }
   if (!sawTerminal) throw new Error('Generation stream ended before completion. Partial output has been preserved.')
@@ -114,6 +126,7 @@ export async function cancelApplicationGeneration(projectId: string, generationI
 
 export type ProjectApplicationState = {
   snapshotId?: string
+  pendingVariationSetId?: string
   files: Record<string, string> | null
   messages: ChatMessage[]
 }
@@ -180,4 +193,30 @@ export async function restoreApplicationSnapshot(projectId: string, snapshotId: 
     method: 'POST',
     body: '{}',
   })
+}
+
+export async function loadVariationSet(
+  projectId: string,
+  variationSetId: string,
+  idToken?: string,
+): Promise<VariationSetPayload> {
+  if (!idToken) throw new Error('Sign in again to load this comparison.')
+  return authenticatedRequest<VariationSetPayload>(
+    `projects/${encodeURIComponent(projectId)}/variation-sets/${encodeURIComponent(variationSetId)}`,
+    idToken,
+  )
+}
+
+export async function selectVariationFinalist(
+  projectId: string,
+  variationSetId: string,
+  candidateId: string,
+  idToken?: string,
+): Promise<{ snapshotId: string; files: Record<string, string> }> {
+  if (!idToken) throw new Error('Sign in again to choose a direction.')
+  return authenticatedRequest<{ snapshotId: string; files: Record<string, string> }>(
+    `projects/${encodeURIComponent(projectId)}/variation-sets/${encodeURIComponent(variationSetId)}/selection`,
+    idToken,
+    { method: 'POST', body: JSON.stringify({ candidateId }) },
+  )
 }

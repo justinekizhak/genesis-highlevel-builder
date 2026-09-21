@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import { consumeGenerationStream, generateApplication, parseSseBlock } from './generation'
+import {
+  consumeGenerationStream,
+  generateApplication,
+  loadVariationSet,
+  parseSseBlock,
+  selectVariationFinalist,
+} from './generation'
 import type { GenerationEvent } from '@/types/generation'
 
 function streamResponse(chunks: string[]) {
@@ -67,5 +73,66 @@ describe('generateApplication', () => {
     expect(events).toEqual([{ type: 'complete', generationId: 'g1' }])
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
+  })
+})
+
+describe('variation transport', () => {
+  it('treats variation_complete as terminal', async () => {
+    await expect(consumeGenerationStream(streamResponse([
+      'event: variation_complete\ndata: {"type":"variation_complete","variationSetId":"set-1"}\n\n',
+    ]), vi.fn())).resolves.toBeUndefined()
+  })
+
+  it('parses multi-variant blocks across arbitrary chunk boundaries', async () => {
+    const events: GenerationEvent[] = []
+    await consumeGenerationStream(streamResponse([
+      'event: candidate_progress\ndata: {"type":"candidate_pro',
+      'gress","candidateId":"a","phase":"styles"}\n\n: heartbeat\n\n',
+      'event: variation_complete\ndata: {"type":"variation_complete","variationSetId":"set-1"}\n\n',
+    ]), (event) => events.push(event))
+    expect(events).toEqual([
+      { type: 'candidate_progress', candidateId: 'a', phase: 'styles' },
+      { type: 'variation_complete', variationSetId: 'set-1' },
+    ])
+  })
+
+  it('still rejects a variation stream that closes before any terminal event', async () => {
+    await expect(consumeGenerationStream(streamResponse([
+      'event: finalists_ready\ndata: {"type":"finalists_ready","variationSetId":"set-1"}\n\n',
+    ]), () => undefined)).rejects.toThrow('ended before completion')
+  })
+})
+
+describe('variation REST calls', () => {
+  it('selects a finalist through the owner API', async () => {
+    vi.stubEnv('VITE_FUNCTIONS_BASE_URL', 'http://127.0.0.1:5001/jk-ai-app-builder/us-central1')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ snapshotId: 's1', files: {} })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await selectVariationFinalist('p1', 'set-1', 'candidate-a', 'token')
+
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/variation-sets/set-1/selection'), expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ candidateId: 'candidate-a' }),
+    }))
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('reloads a persisted variation set', async () => {
+    vi.stubEnv('VITE_FUNCTIONS_BASE_URL', 'http://127.0.0.1:5001/jk-ai-app-builder/us-central1')
+    const payload = { variationSetId: 'set-1', status: 'ready', finalists: [] }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload)))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(loadVariationSet('p1', 'set-1', 'token')).resolves.toMatchObject({ variationSetId: 'set-1' })
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/projects/p1/variation-sets/set-1'), expect.anything())
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('refuses variation calls without a signed-in token', async () => {
+    await expect(loadVariationSet('p1', 'set-1')).rejects.toThrow('Sign in again')
+    await expect(selectVariationFinalist('p1', 'set-1', 'candidate-a')).rejects.toThrow('Sign in again')
   })
 })
