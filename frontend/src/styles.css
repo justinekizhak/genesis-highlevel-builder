@@ -184,6 +184,33 @@ button { touch-action: manipulation; }
 .message.user > span { color: var(--accent); }
 .generation-progress { gap: 8px; color: var(--accent); font-size: 12px; }
 .generation-progress svg { animation: breathe 1.3s ease-in-out infinite; }
+.variation-activity-copy {
+  display: grid;
+  gap: 10px;
+  padding: 12px 13px;
+  border: 1px solid #3a392f;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #1b1b16, #161713);
+}
+.variation-activity-copy > strong { color: #e8e4d9; font-size: 12.5px; font-weight: 600; line-height: 1.45; }
+.variation-activity-copy ol { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.variation-activity-copy li { display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: start; gap: 8px; color: #9b9b93; font-size: 11px; line-height: 1.45; }
+.variation-activity-copy li i { width: 6px; height: 6px; margin-top: 5px; border-radius: 50%; background: #6e6f68; }
+.variation-activity-copy li.is-active { color: #d4d0c6; }
+.variation-activity-copy li.is-active i { background: var(--accent); box-shadow: 0 0 0 3px rgb(223 184 95 / .12); animation: breathe 1.3s ease-in-out infinite; }
+.variation-activity-copy li.is-complete i { background: #74ad7c; }
+.variation-activity-copy li.is-failed i { background: #b08a47; }
+.comparison-revisit-card {
+  display: grid;
+  gap: 8px;
+  padding: 13px;
+  border: 1px solid #46412f;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #211f18, #171814);
+}
+.comparison-revisit-card strong { color: #ece8dc; font-size: 12.5px; }
+.comparison-revisit-card p { margin: 0; color: #9b9b93; font-size: 11.5px; line-height: 1.5; }
+.comparison-revisit-card button { justify-self: start; margin-top: 2px; }
 .error-message { padding: 10px; border: 1px solid #71413c; border-radius: 7px; color: #e6a69e; background: #2b1c1a; font-size: 12px; }
 .stopped-notice { padding: 10px; border: 1px solid var(--border); border-radius: 7px; color: var(--muted-foreground); background: var(--surface-raised); font-size: 12px; }
 
@@ -548,6 +575,29 @@ button { touch-action: manipulation; }
 .snapshot-list-footer time { white-space: nowrap; }
 .snapshot-list-footer > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snapshot-current-badge { justify-self: start; min-height: 18px; padding: 1px 6px; border-color: #66552f; background: #282216; color: #efc973; font-size: 8px; }
+.snapshot-list-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.snapshot-list-tags:empty { display: none; }
+.snapshot-variations-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid #35473f;
+  border-radius: 5px;
+  background: #16211c;
+  color: #7fcfa8;
+  font: 8px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  cursor: default;
+}
+.snapshot-detail-variations {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #7fcfa8;
+}
+.snapshot-detail-variations svg { color: #7fcfa8; }
 .snapshot-detail { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; background: #141512; }
 .snapshot-detail-header {
   display: flex;
@@ -685,13 +735,56 @@ button { touch-action: manipulation; }
 }
 
 @media (max-width: 1020px) {
-  .app-shell { grid-template-rows: 56px 43px minmax(0, 1fr); }
+  .app-shell { grid-template-rows: 56px 64px minmax(0, 1fr); }
   .topbar { grid-template-columns: 1fr auto; }
   .project-switcher { display: none; }
-  .mobile-tabs { display: block; border-bottom: 1px solid var(--border); background: #151512; }
-  .mobile-tab-list { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; }
-  .mobile-tabs button { display: flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted-foreground); font-size: 11px; }
-  .mobile-tabs button[data-state="active"] { border-bottom-color: var(--accent); color: #e1c27c; }
+  .mobile-tabs {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: #11120f;
+  }
+  .mobile-tab-list {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3px;
+    width: 100%;
+    height: 52px;
+    padding: 3px;
+    border: 1px solid #2c2d29;
+    border-radius: 10px;
+    background: #0e0f0d;
+  }
+  .mobile-tabs button {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    color: #85867e;
+    font: 600 10px/1 "IBM Plex Mono", ui-monospace, monospace;
+    letter-spacing: .035em;
+    text-transform: uppercase;
+    transition: border-color 180ms ease, background-color 180ms ease, color 180ms ease;
+  }
+  .mobile-tabs button svg { color: #72736c; transition: color 180ms ease, transform 240ms cubic-bezier(.16, 1, .3, 1); }
+  .mobile-tabs button[data-state="active"] {
+    border-color: #6a562d;
+    background: #26241d;
+    color: #f0cf80;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .04);
+  }
+  .mobile-tabs button[data-state="active"] svg { color: var(--accent); transform: translateY(-1px); }
+  @media (hover: hover) {
+    .mobile-tabs button:not([data-state="active"]):hover { background: #181916; color: #c7c4ba; }
+  }
   .workspace { display: block; }
   .panel-resizer, .collapsed-panel-button { display: none; }
   .panel { display: none; height: 100%; border-left: 0 !important; }
@@ -712,8 +805,8 @@ button { touch-action: manipulation; }
     transform: scale(1);
     visibility: visible;
     transition:
-      opacity 180ms ease 90ms,
-      transform 260ms cubic-bezier(.16, 1, .3, 1) 60ms,
+      opacity 140ms ease 300ms,
+      transform 180ms cubic-bezier(.16, 1, .3, 1) 280ms,
       visibility 0s linear 0s;
   }
   .panel.is-collapsed { display: grid; grid-template-rows: minmax(0, 1fr); place-items: stretch; background: #141411; }
@@ -1167,10 +1260,8 @@ button { touch-action: manipulation; }
 .diff-file { border-radius: 10px; background: #0e0f0d; }
 
 @media (max-width: 1020px) {
-  .app-shell { grid-template-rows: 60px 46px minmax(0, 1fr); }
+  .app-shell { grid-template-rows: 60px 64px minmax(0, 1fr); }
   .topbar { padding-inline: 12px; }
-  .mobile-tabs { background: #141512; }
-  .mobile-tabs button { min-height: 46px; }
   .panel.mobile-active { border-right: 0; }
 }
 
@@ -1242,24 +1333,31 @@ button { touch-action: manipulation; }
   }
 }
 
-/* Shared workspace grid hooks for the variation comparison stage; component styling stays scoped. */
+/* Shared workspace grid hooks for the variation comparison stage; component styling stays scoped.
+   Track sizing itself is driven by the `workspaceStyle` inline style (same chat/resizer tracks as
+   the three-panel layout) so the collapse animation matches; this is just the pre-hydration fallback. */
 .workspace.has-variation-stage {
-  grid-template-columns: minmax(270px, .72fr) minmax(0, 2.28fr);
+  grid-template-columns: minmax(270px, .72fr) minmax(6px, 0fr) minmax(0, 2.28fr);
 }
 
 .variation-stage {
   min-width: 0;
   min-height: 0;
-  grid-column: 2;
-  overflow: auto;
+  height: 100%;
+  grid-column: 3;
+  overflow: hidden;
 }
 
-@media (max-width: 800px) {
+@media (max-width: 1020px) {
   .workspace.has-variation-stage {
     grid-template-columns: 1fr;
   }
 
   .variation-stage {
     grid-column: 1;
+    display: none;
+    height: 100%;
   }
+
+  .variation-stage.mobile-active { display: block; }
 }

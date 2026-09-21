@@ -24,8 +24,7 @@ export type FinalistMetadata = {
   candidateId: string
   displayName: VariationDisplayName
   summary: string
-  strengths: string[]
-  risks: string[]
+  standout: string
 }
 
 export type VariationGenerationEvent =
@@ -38,6 +37,7 @@ export type VariationGenerationEvent =
   | { type: 'variation_validation_started'; completedCount: number }
   | { type: 'variation_validation_complete'; eligibleCount: number }
   | { type: 'variation_grading_started'; eligibleCount: number }
+  | { type: 'variation_grading_progress'; completedCount: number; totalCount: number }
   | { type: 'variation_grading_complete'; gradingMode: 'full' | 'deterministic_fallback' }
   | { type: 'finalist_metadata'; variationSetId: string; finalists: FinalistMetadata[] }
   | { type: 'finalist_file_start'; candidateId: string; path: string; language: string }
@@ -91,6 +91,7 @@ const variationEventTypes = new Set<GenerationEvent['type']>([
   'variation_validation_started',
   'variation_validation_complete',
   'variation_grading_started',
+  'variation_grading_progress',
   'variation_grading_complete',
   'finalist_metadata',
   'finalist_file_start',
@@ -136,6 +137,7 @@ export type WorkspaceGenerationState =
       variationSetId?: string
       phase: VariationPhase
       gradingMode?: 'full' | 'deterministic_fallback'
+      gradingProgress?: { completedCount: number; totalCount: number }
       candidates: Record<string, CandidateProgress>
       finalists: Record<string, VariationFinalist>
     }

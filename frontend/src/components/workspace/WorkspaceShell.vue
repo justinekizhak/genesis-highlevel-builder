@@ -39,6 +39,7 @@ import { requireFirestore } from '@/services/firebase'
 import { hlEventLabel } from '@/lib/highlevel-events'
 import { buildSrcdoc } from '@/lib/srcdoc'
 import { buildGenerationDiff, type GenerationFileDiff } from '@/lib/generation-diff'
+import { responseUiCopy, variationActivityForEvent, type VariationActivityItem } from '@/lib/variation-activity'
 import { buildProjectArchive, projectArchiveFilename } from '@/lib/project-archive'
 import { animateEntrance, animateFeedback } from '@/lib/motion'
 import { useIntegrationStatusQuery } from '@/composables/server-state'
@@ -115,6 +116,8 @@ const messages = ref<ChatMessage[]>([
     content: 'Describe a HighLevel workflow or dashboard. I will generate a small, reviewable app and show each file as it is written.',
   },
 ])
+const variationActivityItems = ref<VariationActivityItem[]>([])
+const lastVariationChoice = ref<{ variationSetId: string; responseNumber: number }>()
 const prompt = ref('')
 const selectedModel = ref<GenerationModel>('gpt-5.4-mini')
 const isLoadingProject = ref(true)
@@ -198,11 +201,13 @@ const statusLabel = computed(() => {
 const projectId = computed(() => String(route.params.projectId ?? 'local-demo'))
 const projectTitle = computed(() => projectsStore.projects.find((project) => project.id === projectId.value)?.name ?? 'Untitled project')
 const workspaceStyle = computed(() => {
-  // While the comparison stage owns the right side, the global `.has-variation-stage` grid applies
-  // instead of the three-panel inline template.
-  if (isVariationActive.value) return {}
   const chat = chatCollapsed.value ? 'minmax(44px, 44px)' : `minmax(250px, ${chatWidth.value}px)`
   const chatResizer = chatCollapsed.value ? 'minmax(0px, 0fr)' : 'minmax(6px, 0fr)'
+  if (isVariationActive.value) {
+    // Same chat/resizer tracks as the three-panel layout below, so the collapse animation
+    // behaves identically; the comparison stage just fills the remaining column.
+    return { gridTemplateColumns: `${chat} ${chatResizer} minmax(0, 1fr)` }
+  }
   const code = codeCollapsed.value
     ? 'minmax(44px, 0fr)'
     : previewCollapsed.value
@@ -223,6 +228,7 @@ function cloneFiles(source: Record<string, GeneratedFile>) {
 
 function renderPreview() {
   previewDocument.value = buildSrcdoc(files.value, { enableHighLevelBridge: highLevelStore.connection.connected })
+  previewFrameKey.value += 1
 }
 
 function toggleChatPanel() {
@@ -397,10 +403,24 @@ async function processHighLevelBridgeMessage(
   await executeBridgeRequest(request)
 }
 
+// Multiple preview iframes can be live at once (the main editor preview plus one
+// per finalist in the variation comparison view), each running its own bridge script.
+// Only accept/reply to messages from an iframe that is actually mounted in our DOM.
+function trustedBridgeFrames() {
+  return Array.from(document.querySelectorAll<HTMLIFrameElement>('.variation-preview-frame iframe'))
+}
+
+function isTrustedBridgeSource(source: MessageEventSource | null) {
+  if (!source) return false
+  if (source === previewFrame.value?.contentWindow) return true
+  return trustedBridgeFrames().some((frame) => frame.contentWindow === source)
+}
+
 async function handleHighLevelBridge(event: MessageEvent) {
-  if (event.source !== previewFrame.value?.contentWindow) return
+  if (!isTrustedBridgeSource(event.source)) return
+  const target = event.source as Window
   const respond: BridgeRequest['respond'] = (response) => {
-    previewFrame.value?.contentWindow?.postMessage({
+    target.postMessage({
       channel: 'genesis.highlevel.v1', direction: 'response', requestId: event.data?.requestId, ...response,
     }, '*')
   }
@@ -411,9 +431,9 @@ function forwardHighLevelEvent(hlEvent: { type: string; payload: unknown }) {
   hlLiveEvent.value = { label: hlEventLabel(hlEvent.type) }
   window.clearTimeout(hlLiveEventTimer)
   hlLiveEventTimer = window.setTimeout(() => { hlLiveEvent.value = undefined }, 6000)
-  previewFrame.value?.contentWindow?.postMessage({
-    channel: 'genesis.highlevel.v1', direction: 'event', event: hlEvent,
-  }, '*')
+  const message = { channel: 'genesis.highlevel.v1', direction: 'event', event: hlEvent }
+  previewFrame.value?.contentWindow?.postMessage(message, '*')
+  trustedBridgeFrames().forEach((frame) => frame.contentWindow?.postMessage(message, '*'))
 }
 
 function startHlEventsListener() {
@@ -482,7 +502,11 @@ watch(() => highLevelStore.connection.connected, renderPreview)
 watch(() => highLevelStore.llm.model, (model) => {
   if (isGenerationModel(model)) selectedModel.value = model
 }, { immediate: true })
-watch([() => messageTypewriter.revealedLength.value, () => messages.value.length], () => {
+watch([
+  () => messageTypewriter.revealedLength.value,
+  () => messages.value.length,
+  () => variationActivityItems.value.at(-1)?.label,
+], () => {
   const container = messagesContainer.value
   if (!container) return
   const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80
@@ -624,7 +648,10 @@ function isMessageTyping(message: ChatMessage) {
 }
 
 function renderedMessageHtml(message: ChatMessage) {
-  return renderChatMarkdown(messageText(message))
+  const content = message.role === 'assistant'
+    ? responseUiCopy(messageText(message))
+    : messageText(message)
+  return renderChatMarkdown(content)
 }
 
 function formatTokenCount(value: number) {
@@ -634,9 +661,27 @@ function formatTokenCount(value: number) {
 function handleEvent(event: GenerationEvent) {
   if (isVariationEvent(event)) {
     variationGeneration.accept(event)
+    recordVariationActivity(event)
     return
   }
   handleSingleGenerationEvent(event)
+}
+
+function recordVariationActivity(event: GenerationEvent) {
+  let candidateNumber: number | undefined
+  if ('candidateId' in event && variationState.value.mode === 'variations-running') {
+    const candidate = variationState.value.candidates[event.candidateId]
+    candidateNumber = candidate ? candidate.index + 1 : undefined
+  }
+  const next = variationActivityForEvent(event, candidateNumber)
+  if (!next) return
+
+  const isResponseUpdate = next.key.startsWith('response-')
+  const existing = variationActivityItems.value.filter((item) => item.key !== next.key)
+  variationActivityItems.value = [
+    ...existing.map((item) => (!isResponseUpdate && item.state === 'active' ? { ...item, state: 'complete' as const } : item)),
+    next,
+  ].slice(-5)
 }
 
 function handleSingleGenerationEvent(event: GenerationEvent) {
@@ -716,6 +761,12 @@ function handleSingleGenerationEvent(event: GenerationEvent) {
 }
 
 async function chooseFinalist(candidateId: string) {
+  const comparison = variationState.value.mode === 'variations-ready'
+    ? variationState.value
+    : undefined
+  const responseNumber = comparison
+    ? comparison.finalists.findIndex((finalist) => finalist.candidateId === candidateId) + 1
+    : 0
   let result: { snapshotId: string; files: Record<string, string> } | undefined
   try {
     result = await variationGeneration.selectFinalist(candidateId)
@@ -726,7 +777,11 @@ async function chooseFinalist(candidateId: string) {
   if (!result) return
   hydrateFiles(result.files)
   currentSnapshotId.value = result.snapshotId
+  if (comparison && responseNumber > 0) {
+    lastVariationChoice.value = { variationSetId: comparison.variationSetId, responseNumber }
+  }
   variationGeneration.reset()
+  variationActivityItems.value = []
   filesBeforeGeneration = undefined
   await queryClient.invalidateQueries({ queryKey: ['project-state', projectId.value] })
   await queryClient.invalidateQueries({ queryKey: ['project-snapshots', projectId.value] })
@@ -738,6 +793,9 @@ async function chooseFinalist(candidateId: string) {
 async function openVariationComparison(payload: { variationSetId: string }) {
   snapshotOpen.value = false
   await variationGeneration.reloadPendingVariation(payload.variationSetId).catch(() => undefined)
+  if (variationState.value.mode === 'variations-ready') {
+    variationActivityItems.value = [{ key: 'ready', label: 'Two responses are ready to compare', state: 'complete' }]
+  }
 }
 
 async function submitPrompt(suggestion?: string) {
@@ -752,6 +810,7 @@ async function submitPrompt(suggestion?: string) {
   prompt.value = ''
   generationError.value = ''
   stoppedNotice.value = ''
+  variationActivityItems.value = []
   filesTouchedThisGeneration.value = []
   showInlineDiff.value = false
   streamingFilePath.value = undefined
@@ -821,13 +880,12 @@ async function stopGeneration() {
 
 function refreshPreview() {
   renderPreview()
-  previewFrameKey.value += 1
   nextTick(() => {
     if (previewFrame.value) animateFeedback(previewFrame.value)
   })
 }
 
-async function openPreviewInNewTab() {
+async function openFilesInNewTab(source: Record<string, GeneratedFile>) {
   bridgeError.value = ''
   const opened = window.open('', '_blank')
   if (!opened) {
@@ -838,7 +896,7 @@ async function openPreviewInNewTab() {
   const highLevelDirectProxy = highLevelStore.connection.connected && highLevelStore.functionsBase
     ? { functionsBase: highLevelStore.functionsBase, idToken: (await authStore.getIdToken()) ?? '' }
     : undefined
-  const document = buildSrcdoc(files.value, {
+  const document = buildSrcdoc(source, {
     enableHighLevelBridge: Boolean(highLevelDirectProxy),
     highLevelDirectProxy,
   })
@@ -846,6 +904,14 @@ async function openPreviewInNewTab() {
   const url = URL.createObjectURL(blob)
   opened.location.href = url
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+function openPreviewInNewTab() {
+  return openFilesInNewTab(files.value)
+}
+
+function openVariationPreviewInNewTab(finalist: VariationFinalist) {
+  return openFilesInNewTab(finalist.files)
 }
 
 function downloadProjectArchive() {
@@ -958,12 +1024,12 @@ defineExpose({
     <Tabs v-model="mobilePanel" class="mobile-tabs" aria-label="Workspace panels">
       <TabsList class="mobile-tab-list">
         <TabsTrigger value="chat"><IconMessage :size="16" />Chat</TabsTrigger>
-        <TabsTrigger value="code"><IconCode :size="16" />Code</TabsTrigger>
-        <TabsTrigger value="preview"><IconExternalLink :size="16" />Preview</TabsTrigger>
+        <TabsTrigger value="code"><IconCode :size="16" />{{ isVariationActive ? 'Response 1' : 'Code' }}</TabsTrigger>
+        <TabsTrigger value="preview"><IconExternalLink :size="16" />{{ isVariationActive ? 'Response 2' : 'Preview' }}</TabsTrigger>
       </TabsList>
     </Tabs>
 
-    <section class="workspace" :class="{ 'has-variation-stage': isVariationActive }" :style="workspaceStyle">
+    <section class="workspace" :class="{ 'has-variation-stage': isVariationActive, 'is-chat-collapsed': chatCollapsed }" :style="workspaceStyle">
       <aside class="panel chat-panel" :class="{ 'mobile-active': mobilePanel === 'chat', 'is-collapsed': chatCollapsed }">
         <Button
           v-if="chatCollapsed"
@@ -997,7 +1063,35 @@ defineExpose({
             </span>
           </article>
 
-          <div v-if="isGenerating" class="generation-progress">
+          <article v-if="isVariationActive && variationActivityItems.length" class="message assistant variation-activity-message" data-variation-activity>
+            <span>Genesis</span>
+            <div class="variation-activity-copy">
+              <strong>{{ variationActivityItems.at(-1)?.label }}</strong>
+              <ol>
+                <li v-for="item in variationActivityItems" :key="item.key" :class="`is-${item.state}`">
+                  <i aria-hidden="true" />
+                  <span>{{ item.label }}</span>
+                </li>
+              </ol>
+            </div>
+          </article>
+
+          <article v-if="!isVariationActive && lastVariationChoice" class="message assistant comparison-revisit-message">
+            <span>Genesis</span>
+            <div class="comparison-revisit-card">
+              <strong>Response {{ lastVariationChoice.responseNumber }} is active</strong>
+              <p>You can reopen both generated responses without changing the current app.</p>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                data-reopen-comparison
+                @click="openVariationComparison({ variationSetId: lastVariationChoice.variationSetId })"
+              >Compare responses again</Button>
+            </div>
+          </article>
+
+          <div v-if="isGenerating && !isVariationActive" class="generation-progress">
             <IconSparkles :size="15" />
             <span v-if="isStopping">Stopping generation…</span>
             <span v-else>Writing file {{ filesTouchedThisGeneration.length }} · {{ activePath }}</span>
@@ -1239,14 +1333,18 @@ defineExpose({
           :phase="variationState.phase"
           :candidates="variationState.candidates"
           :grading-mode="variationState.gradingMode"
+          :grading-progress="variationState.gradingProgress"
+          :active-response="mobilePanel === 'preview' ? 2 : 1"
         />
         <VariationComparison
           v-else-if="variationFinalists.length === 2"
           :finalists="(variationFinalists as [VariationFinalist, VariationFinalist])"
           :selecting-candidate-id="variationGeneration.selectingCandidateId.value"
-          :error="variationError"
+          :error="variationError || bridgeError"
           :bridge-enabled="highLevelStore.connection.connected"
+          :active-response="mobilePanel === 'preview' ? 2 : 1"
           @select="chooseFinalist"
+          @open-preview="openVariationPreviewInNewTab"
         />
       </section>
     </section>

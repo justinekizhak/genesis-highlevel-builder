@@ -4,7 +4,7 @@ import { IconCalendarEvent, IconInbox, IconUsers } from '@tabler/icons-vue'
 defineEmits<{ select: [prompt: string] }>()
 
 const suggestions = [
-  { label: 'Contact dashboard', icon: IconUsers, prompt: 'Build a contact dashboard with search and upcoming appointments' },
+  { label: 'Contact dashboard', icon: IconUsers, prompt: 'Build a contact dashboard with search and upcoming appointments with multiple variations' },
   { label: 'Conversation inbox', icon: IconInbox, prompt: 'Show recent conversations and unread messages' },
   { label: 'Calendar view', icon: IconCalendarEvent, prompt: 'Show this week\'s calendar availability and upcoming appointments' },
 ]

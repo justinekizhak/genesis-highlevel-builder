@@ -297,8 +297,7 @@ export const generateApp = onRequest(
             candidateId: finalist.candidateId,
             displayName: finalist.displayName,
             summary: finalist.summary,
-            strengths: finalist.strengths,
-            risks: finalist.risks,
+            standout: finalist.standout,
           })),
         })
         for (const finalist of run.finalists) {

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { GenerationEvent } from '../shared/protocol.js'
+import { safeGrowingPrefixEnd } from './surrogate-safe-chunk.js'
 
 const allowedPaths = new Set(['index.html', 'styles.css', 'app.js'])
 
@@ -100,10 +101,16 @@ export class StructuredApplicationStream {
         events.push({ type: 'file_start', path, language: path.endsWith('.js') ? 'javascript' : path.endsWith('.css') ? 'css' : 'html' })
         this.fileLengths.set(path, 0)
       }
-      if (content.length > emittedLength) {
-        events.push({ type: 'file_delta', path, delta: content.slice(emittedLength) })
-        this.fileLengths.set(path, content.length)
-        this.fileContents.set(path, content)
+      this.fileContents.set(path, content)
+      // Hold back a trailing lone surrogate half until its pair arrives, unless this is the
+      // final flush (content is complete and no more bytes are coming) — see
+      // surrogate-safe-chunk.ts for why a split pair corrupts the checksum.
+      const deltaEnd = contentProperty.decoded.complete
+        ? content.length
+        : safeGrowingPrefixEnd(content, emittedLength)
+      if (deltaEnd > emittedLength) {
+        events.push({ type: 'file_delta', path, delta: content.slice(emittedLength, deltaEnd) })
+        this.fileLengths.set(path, deltaEnd)
       }
       if (contentProperty.decoded.complete && !this.completedFiles.has(path)) {
         events.push({

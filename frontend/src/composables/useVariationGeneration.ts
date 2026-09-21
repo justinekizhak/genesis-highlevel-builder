@@ -11,11 +11,11 @@ import type { GenerationEvent, VariationPhase, WorkspaceGenerationState } from '
 
 /** Truthful copy: every line corresponds to a phase the server actually reported. */
 export const variationPhaseCopy: Record<VariationPhase, string> = {
-  planning: 'Preparing four distinct directions',
-  generating: 'Building four candidates, two at a time',
-  validating: 'Checking each candidate against your request',
-  grading: 'Comparing the strongest results',
-  preparing: 'Preparing the two finalists',
+  planning: 'Preparing response briefs',
+  generating: 'Generating code for four responses',
+  validating: 'Checking each response against your request',
+  grading: 'Comparing the strongest responses',
+  preparing: 'Loading the two final previews',
 }
 
 export function useVariationGeneration(projectId: () => string, getIdToken: () => Promise<string | undefined>) {
@@ -75,9 +75,9 @@ export function useVariationGeneration(projectId: () => string, getIdToken: () =
     try {
       return await selectVariationFinalist(projectId(), variationSetId, candidateId, await getIdToken())
     } catch (cause) {
-      // Both previews stay mounted so the user can retry or pick the other direction.
+      // Both previews stay mounted so the user can retry or pick the other response.
       state.value = current
-      error.value = cause instanceof Error ? cause.message : 'Could not apply that direction.'
+      error.value = cause instanceof Error ? cause.message : 'Could not apply that response.'
       throw cause
     }
   }

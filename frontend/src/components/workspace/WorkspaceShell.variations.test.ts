@@ -8,6 +8,7 @@ const loadVariationSet = vi.fn()
 const selectVariationFinalist = vi.fn()
 const listApplicationSnapshots = vi.fn()
 const invalidateQueries = vi.fn()
+const buildSrcdoc = vi.fn(() => '<html>standalone preview</html>')
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { projectId: 'project-1' } }),
@@ -44,6 +45,7 @@ vi.mock('@/lib/motion', () => ({
   animateEntrance: vi.fn().mockResolvedValue({ cancel: vi.fn() }),
   animateFeedback: vi.fn(),
 }))
+vi.mock('@/lib/srcdoc', () => ({ buildSrcdoc }))
 vi.mock('@/composables/server-state', () => ({ useIntegrationStatusQuery: vi.fn() }))
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({ user: { uid: 'user-1' }, getIdToken: async () => 'token', signOut: vi.fn() }),
@@ -54,7 +56,7 @@ vi.mock('@/stores/highlevel', () => ({
     llm: { model: 'gpt-5.4-mini' },
     loading: false,
     canConnect: true,
-    functionsBase: '',
+    functionsBase: 'https://functions.example.test/v1',
     connect: vi.fn(),
     execute: vi.fn(),
   }),
@@ -89,8 +91,8 @@ const finalistMetadata = {
   type: 'finalist_metadata' as const,
   variationSetId: 'set-1',
   finalists: [
-    { candidateId: 'a', displayName: 'Direction A' as const, summary: 'A', strengths: [], risks: [] },
-    { candidateId: 'b', displayName: 'Direction B' as const, summary: 'B', strengths: [], risks: [] },
+    { candidateId: 'a', displayName: 'Direction A' as const, summary: 'A', standout: '' },
+    { candidateId: 'b', displayName: 'Direction B' as const, summary: 'B', standout: '' },
   ],
 }
 
@@ -102,6 +104,7 @@ async function mountShell() {
 }
 
 beforeEach(() => {
+  vi.restoreAllMocks()
   vi.clearAllMocks()
   // jsdom has no matchMedia; the workspace's motion guards consult it.
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
@@ -153,6 +156,49 @@ describe('WorkspaceShell variation routing', () => {
     expect(wrapper.findComponent({ name: 'VariationProgress' }).exists()).toBe(true)
   })
 
+  it('streams variation milestones into one live Genesis chat message', async () => {
+    const wrapper = await mountShell()
+    const vm = wrapper.vm as any
+
+    vm.handleEvent({ type: 'variation_set_started', variationSetId: 'set-1', count: 4 })
+    vm.handleEvent({ type: 'candidate_started', candidateId: 'opaque-a', index: 0 })
+    vm.handleEvent({ type: 'candidate_progress', candidateId: 'opaque-a', phase: 'markup' })
+    await flushPromises()
+
+    const activity = wrapper.find('[data-variation-activity]')
+    expect(activity.exists()).toBe(true)
+    expect(activity.text()).toContain('Four response briefs are ready')
+    expect(activity.text()).toContain('Response 1 is writing the interface')
+    expect(activity.text()).not.toContain('opaque-a')
+  })
+
+  it('keeps live variation activity in view when the reader is near the bottom', async () => {
+    const wrapper = await mountShell()
+    const vm = wrapper.vm as any
+    const container = wrapper.find('.messages').element as HTMLElement
+    Object.defineProperties(container, {
+      scrollHeight: { configurable: true, value: 500 },
+      clientHeight: { configurable: true, value: 100 },
+      scrollTop: { configurable: true, value: 390, writable: true },
+    })
+
+    vm.handleEvent({ type: 'variation_set_started', variationSetId: 'set-1', count: 4 })
+    await flushPromises()
+
+    expect(container.scrollTop).toBe(500)
+  })
+
+  it('preserves the collapsed chat layout while responses are active', async () => {
+    const wrapper = await mountShell()
+    const vm = wrapper.vm as any
+    vm.handleEvent({ type: 'variation_set_started', variationSetId: 'set-1', count: 4 })
+    await flushPromises()
+
+    await wrapper.get('[aria-label="Collapse conversation"]').trigger('click')
+
+    expect(wrapper.get('.workspace').classes()).toContain('is-chat-collapsed')
+  })
+
   it('shows the comparison once both finalists are ready', async () => {
     const wrapper = await mountShell()
     const vm = wrapper.vm as any
@@ -163,6 +209,47 @@ describe('WorkspaceShell variation routing', () => {
 
     expect(vm.variationState.mode).toBe('variations-ready')
     expect(wrapper.findComponent({ name: 'VariationComparison' }).exists()).toBe(true)
+  })
+
+  it('opens a finalist with the authenticated standalone API bridge', async () => {
+    const opened = { opener: window, location: { href: '' } }
+    const open = vi.spyOn(window, 'open').mockReturnValue(opened as unknown as Window)
+    const createObjectURL = vi.fn(() => 'blob:response-preview')
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
+    const wrapper = await mountShell()
+    const vm = wrapper.vm as any
+    vm.handleEvent({ type: 'variation_set_started', variationSetId: 'set-1', count: 4 })
+    vm.handleEvent(finalistMetadata)
+    vm.handleEvent({ type: 'variation_complete', variationSetId: 'set-1' })
+    await flushPromises()
+    buildSrcdoc.mockClear()
+
+    wrapper.findComponent({ name: 'VariationComparison' }).vm.$emit('open-preview', vm.variationState.finalists[0])
+    await flushPromises()
+
+    expect(open).toHaveBeenCalledWith('', '_blank')
+    expect(buildSrcdoc).toHaveBeenCalledWith(vm.variationState.finalists[0].files, {
+      enableHighLevelBridge: true,
+      highLevelDirectProxy: { functionsBase: 'https://functions.example.test/v1', idToken: 'token' },
+    })
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(opened.location.href).toBe('blob:response-preview')
+  })
+
+  it('surfaces a blocked finalist preview popup in the comparison', async () => {
+    vi.spyOn(window, 'open').mockReturnValue(null)
+    const wrapper = await mountShell()
+    const vm = wrapper.vm as any
+    vm.handleEvent({ type: 'variation_set_started', variationSetId: 'set-1', count: 4 })
+    vm.handleEvent(finalistMetadata)
+    vm.handleEvent({ type: 'variation_complete', variationSetId: 'set-1' })
+    await flushPromises()
+
+    const comparison = wrapper.findComponent({ name: 'VariationComparison' })
+    comparison.vm.$emit('open-preview', vm.variationState.finalists[0])
+    await flushPromises()
+
+    expect(comparison.props('error')).toContain('preview tab was blocked')
   })
 
   it('hydrates the chosen files only after selection succeeds', async () => {
@@ -181,6 +268,33 @@ describe('WorkspaceShell variation routing', () => {
     expect(vm.files['index.html']?.content).toBe(selectedFiles['index.html'])
     expect(vm.currentSnapshotId).toBe('snapshot-a')
     expect(vm.variationState.mode).toBe('idle')
+  })
+
+  it('offers a chat action to compare the same responses again after selection', async () => {
+    selectVariationFinalist.mockResolvedValue({ snapshotId: 'snapshot-a', files: { 'app.js': '// selected' } })
+    loadVariationSet.mockResolvedValue({
+      variationSetId: 'set-1',
+      status: 'selected',
+      finalists: [
+        { candidateId: 'a', displayName: 'Direction A', summary: 'A', standout: '', files: { 'app.js': '// a' } },
+        { candidateId: 'b', displayName: 'Direction B', summary: 'B', standout: '', files: { 'app.js': '// b' } },
+      ],
+    })
+    const wrapper = await mountShell()
+    const vm = wrapper.vm as any
+    vm.handleEvent({ type: 'variation_set_started', variationSetId: 'set-1', count: 4 })
+    vm.handleEvent(finalistMetadata)
+    vm.handleEvent({ type: 'variation_complete', variationSetId: 'set-1' })
+    await vm.chooseFinalist('a')
+    await flushPromises()
+
+    const reopen = wrapper.get('[data-reopen-comparison]')
+    expect(reopen.text()).toContain('Compare responses again')
+    await reopen.trigger('click')
+    await flushPromises()
+
+    expect(loadVariationSet).toHaveBeenCalledWith('project-1', 'set-1', expect.any(String))
+    expect(vm.variationState.mode).toBe('variations-ready')
   })
 
   it('keeps the comparison open and retryable when selection fails', async () => {
@@ -211,8 +325,8 @@ describe('WorkspaceShell variation routing', () => {
       variationSetId: 'set-1',
       status: 'ready',
       finalists: [
-        { candidateId: 'a', displayName: 'Direction A', summary: 'A', strengths: [], risks: [], files: { 'app.js': '// a' } },
-        { candidateId: 'b', displayName: 'Direction B', summary: 'B', strengths: [], risks: [], files: { 'app.js': '// b' } },
+        { candidateId: 'a', displayName: 'Direction A', summary: 'A', standout: '', files: { 'app.js': '// a' } },
+        { candidateId: 'b', displayName: 'Direction B', summary: 'B', standout: '', files: { 'app.js': '// b' } },
       ],
     })
     const wrapper = await mountShell()
@@ -246,8 +360,8 @@ describe('WorkspaceShell variation routing', () => {
       variationSetId: 'set-1',
       status: 'selected',
       finalists: [
-        { candidateId: 'a', displayName: 'Direction A', summary: 'A', strengths: [], risks: [], files: { 'app.js': '// a' } },
-        { candidateId: 'b', displayName: 'Direction B', summary: 'B', strengths: [], risks: [], files: { 'app.js': '// b' } },
+        { candidateId: 'a', displayName: 'Direction A', summary: 'A', standout: '', files: { 'app.js': '// a' } },
+        { candidateId: 'b', displayName: 'Direction B', summary: 'B', standout: '', files: { 'app.js': '// b' } },
       ],
     })
     const wrapper = await mountShell()

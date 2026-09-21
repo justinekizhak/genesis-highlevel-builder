@@ -160,6 +160,117 @@ function writeDiagram(diagram) {
 
 const diagrams = [
   {
+    name: 'multi-app-backend-architecture', title: 'Multi-App Preview — Backend Architecture', width: 1400, height: 880,
+    nodes: [
+      { id: 'ma-request', role: 'ui', x: 35, y: 110, w: 205, h: 105, title: 'Generation request', body: ['Raw prompt + project ID', 'Authenticated owner'] },
+      { id: 'ma-guard', role: 'decision', x: 285, y: 100, w: 235, h: 125, title: 'Request guardrails', body: ['Generation lock', 'HighLevel connected', 'Persist user message'] },
+      { id: 'ma-planner', role: 'external', x: 570, y: 100, w: 240, h: 125, title: 'Structured planner', body: ['Classify intent', 'Feature contract', '0 or 4 briefs'] },
+      { id: 'ma-mode', role: 'decision', x: 865, y: 95, w: 185, h: 135, title: 'Mode?', body: ['single / variations'], shape: 'diamond' },
+      { id: 'ma-single', role: 'service', x: 1110, y: 105, w: 250, h: 115, title: 'Existing single path', body: ['1 generation unit', 'Stream code directly', 'Persist normal snapshot'] },
+      { id: 'ma-pool', role: 'service', x: 750, y: 330, w: 255, h: 125, title: 'Candidate worker pool', body: ['4 isolated requests', 'Concurrency = 2', 'All-settled failures'] },
+      { id: 'ma-memory', role: 'data', x: 1085, y: 330, w: 275, h: 125, title: 'Function memory', body: ['3 files + usage per app', 'No candidate code streamed', 'before ranking'] },
+      { id: 'ma-qualify', role: 'decision', x: 750, y: 545, w: 255, h: 130, title: 'Deterministic qualify', body: ['Hard safety/runtime gates', 'Soft evidence + score', 'Need at least 2 eligible'] },
+      { id: 'ma-grade', role: 'external', x: 1085, y: 545, w: 275, h: 130, title: 'Blinded AI grader', body: ['Independent 100-point rubric', 'Retry once', 'Deterministic fallback'] },
+      { id: 'ma-persist', role: 'data', x: 750, y: 755, w: 255, h: 95, title: 'Persist top two', body: ['Variation set + finalists', 'Discard other code'] },
+      { id: 'ma-stream', role: 'ui', x: 1085, y: 755, w: 275, h: 95, title: 'Comparison client', body: ['SSE metadata + 2 file sets', 'Direction A / Direction B'] },
+      { id: 'ma-control', role: 'decision', x: 35, y: 355, w: 595, h: 165, title: 'Cross-cutting controls', body: ['One abort signal: planner → workers → grader', '15s SSE heartbeat · truthful milestone events', 'Variation quota weight = 4 · function timeout = 540s', 'Project lock held for the entire batch'] },
+      { id: 'ma-unchanged', role: 'neutral', x: 35, y: 610, w: 595, h: 150, title: 'Key compatibility decision', body: ['Normal prompts still use the original streaming workflow', 'Active project files stay unchanged until the user selects', 'Fewer than 2 eligible candidates persists no variation', 'Selection later creates a normal project snapshot'] },
+    ],
+    edges: [
+      { id: 'ma-e1', start: [240, 162], end: [285, 162] }, { id: 'ma-e2', start: [520, 162], end: [570, 162] },
+      { id: 'ma-e3', start: [810, 162], end: [865, 162] }, { id: 'ma-e4', start: [1050, 155], end: [1110, 155], label: 'single' },
+      { id: 'ma-e5', role: 'service', start: [955, 230], end: [880, 330], label: 'variations' },
+      { id: 'ma-e6', start: [1005, 392], end: [1085, 392], label: '4 results' },
+      { id: 'ma-e7', start: [1190, 455], end: [1005, 610], label: 'validate' },
+      { id: 'ma-e8', start: [1005, 610], end: [1085, 610], label: 'eligible' },
+      { id: 'ma-e9', start: [1195, 675], end: [1005, 800], label: 'rank top 2' },
+      { id: 'ma-e10', start: [1005, 802], end: [1085, 802], label: 'after commit' },
+    ],
+  },
+  {
+    name: 'multi-prompt-generation-briefs', title: 'Multi-Prompt System — From One Request to Four Briefs', width: 1400, height: 900,
+    nodes: [
+      { id: 'mp-user', role: 'ui', x: 35, y: 115, w: 225, h: 115, title: 'Raw user prompt', body: ['The product to build', 'May ask for alternatives', 'Treated as untrusted data'] },
+      { id: 'mp-context', role: 'data', x: 35, y: 300, w: 225, h: 120, title: 'Bounded context', body: ['Project metadata', 'Last 12 messages', 'Current file names only'] },
+      { id: 'mp-planner-prompt', role: 'external', x: 330, y: 150, w: 285, h: 165, title: 'Planner prompt (new)', body: ['Detect whole-app variation intent', 'Extract one shared contract', 'Require exactly 4 briefs', 'Confidence threshold = 0.8'] },
+      { id: 'mp-plan', role: 'data', x: 685, y: 105, w: 285, h: 205, title: 'Structured GenerationPlan', body: ['mode + confidence', 'required / optional / invariants', '4 briefs for variation mode', 'Schema-bounded output'] },
+      { id: 'mp-fallback', role: 'decision', x: 1035, y: 120, w: 300, h: 175, title: 'Safe planner fallback', body: ['Failure or invalid JSON → single', 'Low variation confidence → single', 'Cancellation still stops everything', 'Ordinary generation is never blocked'] },
+      { id: 'mp-contract', role: 'data', x: 35, y: 550, w: 245, h: 150, title: 'Shared feature contract', body: ['Same capabilities in all 4', 'HighLevel + safety invariants', 'Prevents feature drift'] },
+      { id: 'mp-briefs', role: 'service', x: 340, y: 505, w: 310, h: 235, title: 'Four generation briefs', body: ['Design intent', 'Information architecture', 'Interaction model', 'Visual direction + density', '≥3 pairwise differences', 'No candidate is described as “best”'] },
+      { id: 'mp-system', role: 'decision', x: 720, y: 465, w: 285, h: 180, title: 'Base systemPrompt', body: ['Existing shared generator policy', 'Vue 3-file runtime', 'HighLevel data contracts', 'Security + accessible dark UI', 'Same for every candidate'] },
+      { id: 'mp-directive', role: 'service', x: 720, y: 690, w: 285, h: 165, title: 'Candidate directive (new)', body: ['Contract + exactly 1 brief', 'Appended after raw request', 'May shape presentation only', 'Cannot remove required features'] },
+      { id: 'mp-candidates', role: 'external', x: 1080, y: 500, w: 280, h: 220, title: '4 isolated model calls', body: ['Same model + reasoning effort', 'Same current files + context', 'Candidates never see each other', 'Independent sampling', 'Strict 3-file JSON schema'] },
+      { id: 'mp-boundary', role: 'neutral', x: 1035, y: 780, w: 325, h: 85, title: 'Separation of concerns', body: ['Policy stays global; briefs create diversity', 'The grader never receives the briefs'] },
+    ],
+    edges: [
+      { id: 'mp-e1', start: [260, 170], end: [330, 205] }, { id: 'mp-e2', start: [260, 355], end: [330, 260] },
+      { id: 'mp-e3', start: [615, 220], end: [685, 205] }, { id: 'mp-e4', start: [970, 205], end: [1035, 205], label: 'guard' },
+      { id: 'mp-e5', role: 'data', start: [785, 310], end: [180, 550], label: 'contract' },
+      { id: 'mp-e6', role: 'service', start: [850, 310], end: [500, 505], label: '4 briefs' },
+      { id: 'mp-e7', start: [280, 625], end: [720, 750], label: 'shared' },
+      { id: 'mp-e8', start: [650, 620], end: [720, 770], label: 'one each' },
+      { id: 'mp-e9', start: [1005, 555], end: [1080, 580], label: 'instructions' },
+      { id: 'mp-e10', start: [1005, 770], end: [1080, 655], label: 'input suffix' },
+    ],
+  },
+  {
+    name: 'variation-grading-algorithm', title: 'Variation Qualification and Grading — Implemented Algorithm', width: 1400, height: 920,
+    nodes: [
+      { id: 'vg-four', role: 'service', x: 35, y: 110, w: 220, h: 115, title: 'Completed candidates', body: ['Up to 4 applications', 'Each has exactly 3 files'] },
+      { id: 'vg-hard', role: 'decision', x: 315, y: 90, w: 280, h: 155, title: 'Hard qualification gates', body: ['Schema + file limits', 'Forbidden APIs / secrets', 'Mandatory Vue runtime', 'app.js parses'] },
+      { id: 'vg-soft', role: 'decision', x: 655, y: 90, w: 295, h: 155, title: 'Soft deterministic checks', body: ['HighLevel contracts 25', 'States 20 · features 30', 'Accessibility 15', 'Responsive CSS 10'] },
+      { id: 'vg-count', role: 'decision', x: 1015, y: 95, w: 180, h: 145, title: '≥2 eligible?', shape: 'diamond' },
+      { id: 'vg-fail', danger: true, x: 1225, y: 110, w: 150, h: 115, title: 'Stop safely', body: ['Persist nothing', 'Project unchanged'] },
+      { id: 'vg-blind', role: 'decision', x: 315, y: 355, w: 280, h: 180, title: 'Blind the candidates', body: ['Shuffle candidate order', 'Assign random UUID aliases', 'Remove brief + original index', 'Remove model + display position'] },
+      { id: 'vg-input', role: 'data', x: 35, y: 370, w: 220, h: 155, title: 'Grader input', body: ['Raw user request', 'Shared feature contract', 'Deterministic evidence', 'Alias + source files'] },
+      { id: 'vg-rubric', role: 'external', x: 655, y: 335, w: 310, h: 220, title: 'Independent rubric call', body: ['Feature fidelity 30', 'Functional correctness 25', 'Robustness 15', 'Usability 10 · accessibility 10', 'Responsive 5 · maintainable 5'] },
+      { id: 'vg-rank', role: 'service', x: 1025, y: 350, w: 300, h: 190, title: 'Deterministic rank logic', body: ['1. Total rubric score', '2. Feature fidelity', '3. Functional correctness', '4. Opaque alias', 'No second model or pairwise pass'] },
+      { id: 'vg-retry', role: 'decision', x: 655, y: 690, w: 260, h: 145, title: 'Grader succeeds?', body: ['Maximum 2 attempts'], shape: 'diamond' },
+      { id: 'vg-fallback', role: 'service', x: 315, y: 700, w: 270, h: 130, title: 'Deterministic fallback', body: ['Rank by soft score', 'Tie: candidate ID', 'gradingMode = fallback'] },
+      { id: 'vg-top', role: 'data', x: 1025, y: 690, w: 300, h: 150, title: 'Top two finalists', body: ['Persist files + score breakdown', 'Expose “standout” summary', 'Hide numeric scores in UI', 'Stable A/B display ≠ rank'] },
+      { id: 'vg-note', role: 'neutral', x: 35, y: 610, w: 220, h: 175, title: 'Design vs implementation', body: ['Earlier spec proposed a', '70/30 rubric + pairwise blend.', 'Current code intentionally uses', 'rubric-only ranking.'] },
+    ],
+    edges: [
+      { id: 'vg-e1', start: [255, 165], end: [315, 165] }, { id: 'vg-e2', start: [595, 165], end: [655, 165] },
+      { id: 'vg-e3', start: [950, 165], end: [1015, 165] }, { id: 'vg-e4', start: [1195, 165], end: [1225, 165], label: 'no', danger: true },
+      { id: 'vg-e5', role: 'data', start: [1105, 240], end: [520, 355], label: 'yes' },
+      { id: 'vg-e6', start: [255, 445], end: [315, 445] }, { id: 'vg-e7', start: [595, 445], end: [655, 445] },
+      { id: 'vg-e8', start: [805, 555], end: [785, 690], label: 'result' },
+      { id: 'vg-e10', start: [655, 762], end: [585, 762], label: 'no after retry' },
+      { id: 'vg-e11', role: 'data', start: [915, 735], end: [1025, 470], label: 'yes · rank' },
+      { id: 'vg-e12', start: [585, 800], end: [1025, 805], label: 'top 2' },
+      { id: 'vg-e13', role: 'data', start: [1175, 540], end: [1175, 690], label: 'top 2' },
+    ],
+  },
+  {
+    name: 'multi-app-lifecycle-data-boundaries', title: 'Multi-App Preview — Lifecycle and Data Boundaries', width: 1400, height: 900,
+    nodes: [
+      { id: 'ml-active', role: 'data', x: 35, y: 110, w: 240, h: 130, title: 'Active project state', body: ['Current files + latestSnapshotId', 'Never mutated during generation'] },
+      { id: 'ml-lock', role: 'decision', x: 330, y: 105, w: 245, h: 140, title: 'Batch ownership', body: ['One project lock', 'One generationId', 'One abort-controller tree'] },
+      { id: 'ml-run', role: 'service', x: 640, y: 95, w: 280, h: 160, title: 'In-memory batch', body: ['4 candidates · concurrency 2', 'Progress milestones only', 'Failures do not cancel siblings', 'Cancellation stops all stages'] },
+      { id: 'ml-rank', role: 'service', x: 985, y: 105, w: 260, h: 140, title: 'Validate + rank', body: ['All viable code remains server-side', 'Select internal ranks 1 and 2'] },
+      { id: 'ml-discard', danger: true, x: 1100, y: 355, w: 255, h: 120, title: 'Discarded candidates', body: ['Code never persisted', 'Code never sent to browser'] },
+      { id: 'ml-store', role: 'data', x: 700, y: 345, w: 325, h: 155, title: 'Atomic finalist persistence', body: ['variationSets/{setId}', 'Exactly 2 candidate documents', 'pendingVariationSetId pointer', 'Aggregate usage + grading mode'] },
+      { id: 'ml-sse', role: 'ui', x: 330, y: 350, w: 300, h: 145, title: 'SSE finalist transfer', body: ['Metadata only after persistence', 'Chunked files + SHA-256', '2 isolated buffers', 'Reload can fetch persisted set'] },
+      { id: 'ml-preview', role: 'ui', x: 35, y: 350, w: 235, h: 145, title: 'Comparison workspace', body: ['Two sandboxed previews', 'Direction A / Direction B', 'No active editor mutation'] },
+      { id: 'ml-choice', role: 'ui', x: 35, y: 660, w: 235, h: 125, title: 'User chooses', body: ['POST selection', 'Candidate ID only'] },
+      { id: 'ml-conflict', role: 'decision', x: 330, y: 640, w: 280, h: 165, title: 'Selection checks', body: ['Owner + finalist membership', 'Set is ready', 'Base snapshot still current', 'Idempotent if already active'] },
+      { id: 'ml-promote', role: 'service', x: 685, y: 635, w: 300, h: 175, title: 'Atomic promotion', body: ['Create standard snapshot', 'Replace active file documents', 'Update latestSnapshotId', 'Clear pending pointer', 'Persist assistant summary'] },
+      { id: 'ml-history', role: 'data', x: 1060, y: 650, w: 295, h: 145, title: 'Recoverable history', body: ['Chosen finalist becomes active', 'Other finalist remains available', 'Later switch creates another snapshot'] },
+      { id: 'ml-events', role: 'neutral', x: 1010, y: 520, w: 345, h: 85, title: 'Operational visibility', body: ['SSE events are factual, not estimated percentages', '15-second heartbeat keeps long requests observable'] },
+    ],
+    edges: [
+      { id: 'ml-e1', start: [275, 175], end: [330, 175] }, { id: 'ml-e2', start: [575, 175], end: [640, 175] },
+      { id: 'ml-e3', start: [920, 175], end: [985, 175] }, { id: 'ml-e4', danger: true, start: [1150, 245], end: [1225, 355], label: 'bottom 2' },
+      { id: 'ml-e5', role: 'data', start: [1050, 245], end: [900, 345], label: 'top 2' },
+      { id: 'ml-e6', start: [700, 420], end: [630, 420], label: 'after commit' },
+      { id: 'ml-e7', start: [330, 420], end: [270, 420] }, { id: 'ml-e8', start: [152, 495], end: [152, 660] },
+      { id: 'ml-e9', start: [270, 722], end: [330, 722] }, { id: 'ml-e10', start: [610, 722], end: [685, 722] },
+      { id: 'ml-e11', start: [985, 722], end: [1060, 722] },
+      { id: 'ml-e12', role: 'data', start: [835, 635], end: [200, 240], label: 'commit active files' },
+    ],
+  },
+  {
     name: 'backend-capability-map', title: 'Backend Capability Map', width: 1200, height: 690,
     nodes: [
       { id: 'entry', role: 'ui', x: 40, y: 115, w: 220, h: 105, title: 'HTTPS entry', body: ['Hosting /api/v1 routes', 'Cloud Functions'] },
@@ -289,7 +400,18 @@ const diagrams = [
   },
 ]
 
-for (const diagram of diagrams) writeDiagram(diagram)
+// Keep the established diagrams first so their generated Excalidraw seeds stay stable even when
+// this file gains new scenes near the top of the catalog.
+const newMultiAppDiagramNames = new Set([
+  'multi-app-backend-architecture',
+  'multi-prompt-generation-briefs',
+  'variation-grading-algorithm',
+  'multi-app-lifecycle-data-boundaries',
+])
+const generationOrder = [...diagrams].sort((left, right) => (
+  Number(newMultiAppDiagramNames.has(left.name)) - Number(newMultiAppDiagramNames.has(right.name))
+))
+for (const diagram of generationOrder) writeDiagram(diagram)
 
 const standaloneRoles = {
   'system-architecture': {

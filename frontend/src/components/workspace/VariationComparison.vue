@@ -28,8 +28,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { gsap } from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { IconAlertTriangle } from '@tabler/icons-vue'
-import { Button } from '@/components/ui/button'
 import VariationPreview from '@/components/workspace/VariationPreview.vue'
+import { responseUiCopy } from '@/lib/variation-activity'
 import type { VariationFinalist } from '@/types/generation'
 
 const props = defineProps<{
@@ -38,16 +38,28 @@ const props = defineProps<{
   error?: string
   bridgeEnabled?: boolean
   canCancel?: boolean
+  activeResponse?: 1 | 2
 }>()
 
-const emit = defineEmits<{ select: [candidateId: string]; cancel: [] }>()
+const emit = defineEmits<{
+  select: [candidateId: string]
+  cancel: []
+  'open-preview': [finalist: VariationFinalist]
+}>()
 
 const root = ref<HTMLElement>()
-const activeTab = ref(props.finalists[0].candidateId)
+const responseGrid = ref<HTMLElement>()
+const responseShare = ref(50)
+const expandedCandidateId = ref<string>()
 const isSelecting = computed(() => Boolean(props.selectingCandidateId))
 const selectingLabel = computed(() => (
-  props.finalists.find((finalist) => finalist.candidateId === props.selectingCandidateId)?.displayName ?? ''
+  props.finalists.findIndex((finalist) => finalist.candidateId === props.selectingCandidateId) + 1
 ))
+const displayError = computed(() => responseUiCopy(props.error ?? ''))
+const responseGridStyle = computed(() => ({
+  '--response-one-share': `${responseShare.value}fr`,
+  '--response-two-share': `${100 - responseShare.value}fr`,
+}))
 // jsdom and older embedded webviews can lack matchMedia; a missing implementation means no motion claim.
 const reduceMotion = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
   ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -60,6 +72,7 @@ onMounted(() => {
   gsap.registerPlugin(ScrollTrigger)
   context = gsap.context(() => {
     gsap.fromTo('.variation-preview-frame', { scale: 0.92, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.7, stagger: 0.08, ease: 'power3.out' })
+    gsap.fromTo('.variation-cell', { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: 0.65, stagger: 0.1, ease: 'power3.out' })
     ScrollTrigger.create({
       trigger: '.variation-evidence',
       start: 'top 85%',
@@ -78,6 +91,36 @@ function choose(candidateId: string) {
   if (isSelecting.value) return
   emit('select', candidateId)
 }
+
+function toggleExpand(candidateId: string) {
+  expandedCandidateId.value = expandedCandidateId.value === candidateId ? undefined : candidateId
+}
+
+function startResponseResize(event: PointerEvent) {
+  const total = (responseGrid.value?.offsetWidth ?? 0) - 6
+  if (total <= 0) return
+  const startX = event.clientX
+  const startShare = responseShare.value
+  const move = (moveEvent: PointerEvent) => {
+    responseShare.value = Math.min(75, Math.max(25, startShare + ((moveEvent.clientX - startX) / total) * 100))
+  }
+  const stop = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', stop)
+    window.removeEventListener('pointercancel', stop)
+    document.body.classList.remove('is-resizing-panels')
+  }
+  document.body.classList.add('is-resizing-panels')
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', stop, { once: true })
+  window.addEventListener('pointercancel', stop, { once: true })
+}
+
+function resizeResponsesWithKeyboard(event: KeyboardEvent) {
+  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+  event.preventDefault()
+  responseShare.value = Math.min(75, Math.max(25, responseShare.value + (event.key === 'ArrowRight' ? 3 : -3)))
+}
 </script>
 
 <template>
@@ -85,55 +128,58 @@ function choose(candidateId: string) {
     ref="root"
     class="variation-stage-root"
     :data-reduced-motion="String(reduceMotion)"
-    aria-label="Choose a direction"
+    aria-label="Choose a response"
   >
-    <header class="variation-decision-header">
-      <div>
-        <h2>Two directions are ready</h2>
-        <p>Both build the same features. Pick the one you want to keep working in — nothing changes until you do.</p>
-      </div>
-      <Button v-if="canCancel" type="button" variant="ghost" :disabled="isSelecting" @click="emit('cancel')">
-        Keep current app
-      </Button>
-    </header>
-
     <p v-if="isSelecting" class="variation-status-line" aria-live="polite">
-      Applying {{ selectingLabel }}…
+      Applying Response {{ selectingLabel }}…
     </p>
 
     <p v-if="error" class="variation-error" role="alert">
       <IconAlertTriangle :size="15" aria-hidden="true" />
-      <span>{{ error }}</span>
+      <span>{{ displayError }}</span>
     </p>
 
-    <div class="variation-tabs" role="tablist" aria-label="Directions">
-      <button
-        v-for="finalist in finalists"
-        :key="`tab-${finalist.candidateId}`"
-        type="button"
-        role="tab"
-        :aria-selected="activeTab === finalist.candidateId"
-        :aria-controls="`variation-panel-${finalist.candidateId}`"
-        @click="activeTab = finalist.candidateId"
-      >{{ finalist.displayName }}</button>
-    </div>
-
-    <div class="variation-grid">
-      <div
-        v-for="finalist in finalists"
-        :id="`variation-panel-${finalist.candidateId}`"
-        :key="finalist.candidateId"
-        class="variation-cell"
-        :class="{ 'is-mobile-active': activeTab === finalist.candidateId }"
-      >
-        <VariationPreview
-          :finalist="finalist"
-          :selecting="selectingCandidateId === finalist.candidateId"
-          :busy="isSelecting"
-          :bridge-enabled="bridgeEnabled"
-          @select="choose"
-        />
-      </div>
+    <div
+      ref="responseGrid"
+      class="variation-grid"
+      :class="{ 'is-expanded': Boolean(expandedCandidateId) }"
+      :style="responseGridStyle"
+    >
+      <template v-for="(finalist, index) in finalists" :key="finalist.candidateId">
+        <div
+          v-if="!expandedCandidateId || expandedCandidateId === finalist.candidateId"
+          :id="`variation-panel-${finalist.candidateId}`"
+          class="variation-cell"
+          data-response-panel
+          :aria-label="`Response ${index + 1}`"
+          :class="{ 'is-mobile-active': !activeResponse || activeResponse === index + 1 }"
+        >
+          <VariationPreview
+            :finalist="finalist"
+            :label="`Response ${index + 1}`"
+            :selecting="selectingCandidateId === finalist.candidateId"
+            :busy="isSelecting"
+            :bridge-enabled="bridgeEnabled"
+            :expanded="expandedCandidateId === finalist.candidateId"
+            @select="choose"
+            @toggle-expand="toggleExpand"
+            @open-preview="emit('open-preview', $event)"
+          />
+        </div>
+        <div
+          v-if="index === 0 && !expandedCandidateId"
+          class="response-resizer"
+          role="separator"
+          aria-label="Resize response previews"
+          aria-orientation="vertical"
+          aria-valuemin="25"
+          aria-valuemax="75"
+          :aria-valuenow="Math.round(responseShare)"
+          tabindex="0"
+          @pointerdown.prevent="startResponseResize"
+          @keydown="resizeResponsesWithKeyboard"
+        ><span /></div>
+      </template>
     </div>
   </section>
 </template>
@@ -141,41 +187,11 @@ function choose(candidateId: string) {
 <style scoped>
 .variation-stage-root {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
+  height: 100%;
   background: var(--canvas, #11110f);
-}
-
-.variation-decision-header {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
-  background: var(--canvas, #11110f);
-  border-bottom: 1px solid var(--border, #30312c);
-}
-
-.variation-decision-header h2 {
-  margin: 0;
-  width: min(100%, 72rem);
-  font-size: clamp(1.25rem, 2vw, 1.75rem);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-  font-weight: 600;
-  color: var(--text, #f2f1ed);
-}
-
-.variation-decision-header p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-muted, #9b9b93);
-  max-width: 65ch;
 }
 
 .variation-status-line,
@@ -187,48 +203,51 @@ function choose(candidateId: string) {
 }
 
 .variation-status-line {
+  grid-row: 1;
   color: var(--text-muted, #9b9b93);
 }
 
 .variation-error {
+  grid-row: 2;
   display: flex;
   align-items: center;
   gap: 8px;
   color: #c85b54;
 }
 
-.variation-tabs {
-  display: none;
-}
-
-.variation-tabs button {
-  flex: 1;
-  min-height: 40px;
-  border: 0;
-  background: #22231f;
-  color: #f2f1ed;
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.variation-tabs button[aria-selected='true'] {
-  background: var(--surface, #131412);
-  box-shadow: inset 0 -2px 0 #dfb85f;
-}
-
-.variation-tabs button:focus-visible {
-  outline: 2px solid #e4bd65;
-  outline-offset: -2px;
-}
-
 .variation-grid {
+  grid-row: 3;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(280px, var(--response-one-share)) 6px minmax(280px, var(--response-two-share));
   grid-auto-flow: dense;
   gap: 0;
   min-height: 0;
+  height: 100%;
 }
+
+.variation-grid.is-expanded {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.response-resizer {
+  position: relative;
+  z-index: 3;
+  min-width: 6px;
+  cursor: col-resize;
+  background: #0d0e0c;
+  touch-action: none;
+}
+
+.response-resizer::before {
+  position: absolute;
+  inset: 0 2px;
+  content: '';
+  background: var(--border, #30312c);
+  transition: background-color 120ms ease;
+}
+
+.response-resizer:hover::before,
+.response-resizer:focus-visible::before { background: var(--accent, #dfb85f); }
 
 .variation-cell {
   display: grid;
@@ -236,15 +255,12 @@ function choose(candidateId: string) {
   min-height: 0;
 }
 
-@media (max-width: 800px) {
-  .variation-tabs {
-    display: flex;
-    border-bottom: 1px solid var(--border, #30312c);
-  }
-
+@media (max-width: 1020px) {
   .variation-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .response-resizer { display: none; }
 
   .variation-cell {
     display: none;

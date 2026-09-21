@@ -104,8 +104,7 @@ function withFinalist(
     candidateId,
     displayName: 'Direction A' as const,
     summary: '',
-    strengths: [],
-    risks: [],
+    standout: '',
     files: {} as Record<string, GeneratedFile>,
   }
   return { ...finalists, [candidateId]: update(existing) }
@@ -117,7 +116,7 @@ function toReadyState(
 ): WorkspaceGenerationState {
   const ordered = orderFinalists(Object.values(finalists))
   if (ordered.length !== 2) {
-    throw new VariationReconstructionError('The comparison arrived incomplete. Reload the project to restore both directions.')
+    throw new VariationReconstructionError('The comparison arrived incomplete. Reload the project to restore both responses.')
   }
   return { mode: 'variations-ready', variationSetId, finalists: [ordered[0]!, ordered[1]!] }
 }
@@ -173,6 +172,8 @@ export function reduceVariationEvent(
         : event.type === 'candidate_complete' ? 'complete' : 'failed'
       return { ...next, candidates: { ...next.candidates, [event.candidateId]: { ...existing, phase: candidatePhase } } }
     }
+    case 'variation_grading_progress':
+      return { ...next, gradingProgress: { completedCount: event.completedCount, totalCount: event.totalCount } }
     case 'variation_grading_complete':
       return { ...next, gradingMode: event.gradingMode }
     case 'finalist_metadata': {
@@ -182,8 +183,7 @@ export function reduceVariationEvent(
           ...finalist,
           displayName: entry.displayName,
           summary: entry.summary,
-          strengths: entry.strengths,
-          risks: entry.risks,
+          standout: entry.standout,
         }))
       }
       return { ...next, variationSetId: event.variationSetId, finalists }
@@ -225,14 +225,13 @@ export function reduceVariationEvent(
 /** Rebuilds comparison state from a persisted variation set, bypassing the event stream entirely. */
 export function variationStateFromPayload(payload: {
   variationSetId: string
-  finalists: Array<{ candidateId: string; displayName: 'Direction A' | 'Direction B'; summary: string; strengths: string[]; risks: string[]; files: Record<string, string> }>
+  finalists: Array<{ candidateId: string; displayName: 'Direction A' | 'Direction B'; summary: string; standout: string; files: Record<string, string> }>
 }): WorkspaceGenerationState {
   const finalists = orderFinalists(payload.finalists.map((entry) => ({
     candidateId: entry.candidateId,
     displayName: entry.displayName,
     summary: entry.summary,
-    strengths: entry.strengths,
-    risks: entry.risks,
+    standout: entry.standout,
     files: Object.fromEntries(Object.entries(entry.files).map(([path, content]) => [path, {
       path,
       content,

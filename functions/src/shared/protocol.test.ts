@@ -55,7 +55,7 @@ describe('variation events', () => {
       {
         type: 'finalist_metadata',
         variationSetId: 'set-1',
-        finalists: [{ candidateId: 'opaque-a', displayName: 'Direction A', summary: 'A', strengths: [], risks: [] }],
+        finalists: [{ candidateId: 'opaque-a', displayName: 'Direction A', summary: 'A', standout: 'Stands out.' }],
       },
       { type: 'finalist_file_start', candidateId: 'opaque-a', path: 'styles.css', language: 'css' },
       { type: 'finalist_file_delta', candidateId: 'opaque-a', path: 'styles.css', delta: 'body{}' },

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { GenerationEvent } from '../shared/protocol.js'
+import { chunkSurrogateSafe } from './surrogate-safe-chunk.js'
 
 export const generatedFileSchema = z.object({
   path: z.enum(['index.html', 'styles.css', 'app.js']),
@@ -37,8 +38,8 @@ export function buildApplicationEvents(
 
   for (const file of application.files) {
     events.push({ type: 'file_start', path: file.path, language: languageFor(file.path) })
-    for (let index = 0; index < file.content.length; index += chunkSize) {
-      events.push({ type: 'file_delta', path: file.path, delta: file.content.slice(index, index + chunkSize) })
+    for (const delta of chunkSurrogateSafe(file.content, chunkSize)) {
+      events.push({ type: 'file_delta', path: file.path, delta })
     }
     events.push({
       type: 'file_complete',
@@ -68,8 +69,8 @@ export function buildFinalistFileEvents(
     const content = files[path]
     if (typeof content !== 'string') continue
     events.push({ type: 'finalist_file_start', candidateId, path, language: languageFor(path) })
-    for (let index = 0; index < content.length; index += chunkSize) {
-      events.push({ type: 'finalist_file_delta', candidateId, path, delta: content.slice(index, index + chunkSize) })
+    for (const delta of chunkSurrogateSafe(content, chunkSize)) {
+      events.push({ type: 'finalist_file_delta', candidateId, path, delta })
     }
     events.push({
       type: 'finalist_file_complete',

@@ -172,31 +172,55 @@ test('streams a single generation straight into the editor', async ({ page }) =>
   }
   // Streamed file content reached the editor through the unchanged single-generation path.
   await expect(page.locator('.file-tree').getByText('index.html')).toBeVisible()
-  await expect(page.getByText('Two directions are ready')).toHaveCount(0)
+  await expect(page.getByText('Two responses are ready to compare')).toHaveCount(0)
 })
 
-test('offers two directions for a variations prompt and activates the chosen one', async ({ page }) => {
+test('gives the mobile workspace tabs an inset, tactile active state', async ({ page }) => {
+  test.skip(!test.info().project.name.startsWith('mobile'), 'Mobile navigation treatment only')
+  await bootstrapWorkspace(page, variationStream)
+  await page.getByLabel('Describe the HighLevel app to generate').fill('Show multiple responses for a contact dashboard')
+  await page.getByRole('button', { name: 'Generate app' }).click()
+  await expect(page.getByRole('tab', { name: 'Response 1' })).toBeVisible({ timeout: 20_000 })
+
+  const tabList = page.getByRole('tablist')
+  const activeTab = page.getByRole('tab', { name: 'Response 1' })
+  await activeTab.click()
+  const viewport = page.viewportSize()
+  const listBox = await tabList.boundingBox()
+  const tabBox = await activeTab.boundingBox()
+
+  expect(viewport).not.toBeNull()
+  expect(listBox).not.toBeNull()
+  expect(tabBox).not.toBeNull()
+  expect(listBox!.x).toBeGreaterThanOrEqual(12)
+  expect(listBox!.width).toBeLessThanOrEqual(viewport!.width - 24)
+  expect(tabBox!.height).toBeGreaterThanOrEqual(44)
+  await expect(activeTab).toHaveCSS('background-color', 'rgb(38, 36, 29)')
+  await expect(activeTab).toHaveCSS('border-radius', '7px')
+})
+
+test('offers two responses for a variations prompt and activates the chosen one', async ({ page }) => {
   const isMobile = test.info().project.name.startsWith('mobile')
   await bootstrapWorkspace(page, variationStream)
   await page.getByLabel('Describe the HighLevel app to generate').fill('Show me a few directions for a contact dashboard')
   await page.getByRole('button', { name: 'Generate app' }).click()
 
   // The comparison replaces the editor and preview; no score or recommendation is ever shown.
-  await expect(page.getByText('Two directions are ready')).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText('Two responses are ready to compare').first()).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText('Recommended')).toHaveCount(0)
 
   if (isMobile) {
-    // Narrow viewports get accessible Direction A / Direction B tabs instead of two columns.
-    await expect(page.getByRole('tab', { name: 'Direction A' })).toBeVisible()
-    await expect(page.getByRole('tab', { name: 'Direction B' })).toBeVisible()
-    await page.getByRole('tab', { name: 'Direction B' }).click()
+    // Narrow viewports use the workspace tabs to expose one full-width response at a time.
+    await expect(page.getByRole('tab', { name: 'Response 1' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Response 2' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Response 2' }).click()
   }
 
-  await expect(page.getByRole('button', { name: 'Use Direction B' })).toBeVisible()
-  if (!isMobile) await expect(page.getByRole('button', { name: 'Use Direction A' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Use Response 2' })).toBeVisible()
+  if (!isMobile) await expect(page.getByRole('button', { name: 'Use Response 1' })).toBeVisible()
 
-  await page.getByRole('button', { name: 'Use Direction B' }).click()
-  await expect(page.getByRole('button', { name: 'Use Direction B' })).toHaveCount(0, { timeout: 20_000 })
+  await page.getByRole('button', { name: 'Use Response 2' }).click()
+  await expect(page.getByRole('button', { name: 'Use Response 2' })).toHaveCount(0, { timeout: 20_000 })
   if (isMobile) await page.getByRole('tab', { name: 'Code' }).click()
   // Only after a successful selection do the chosen files reach the editor.
   await expect(page.locator('.file-tree').getByText('app.js')).toBeVisible({ timeout: 20_000 })
@@ -213,7 +237,24 @@ test('treats a trailing "with multiple variations" phrase as a whole-app variati
     .fill('Build a contact dashboard with search and upcoming appointments with multiple variations')
   await page.getByRole('button', { name: 'Generate app' }).click()
 
-  await expect(page.getByText('Two directions are ready')).toBeVisible({ timeout: 20_000 })
-  if (isMobile) await page.getByRole('tab', { name: 'Direction B' }).click()
-  await expect(page.getByRole('button', { name: 'Use Direction B' })).toBeVisible()
+  await expect(page.getByText('Two responses are ready to compare').first()).toBeVisible({ timeout: 20_000 })
+  if (isMobile) await page.getByRole('tab', { name: 'Response 2' }).click()
+  await expect(page.getByRole('button', { name: 'Use Response 2' })).toBeVisible()
+})
+
+test('keeps chat and response tabs isolated at the tablet breakpoint', async ({ page }) => {
+  test.skip(test.info().project.name.startsWith('mobile'), 'Covered with a dedicated 900px viewport')
+  await page.setViewportSize({ width: 900, height: 720 })
+  await bootstrapWorkspace(page, variationStream)
+  await page.getByLabel('Describe the HighLevel app to generate').fill('Show multiple responses for a contact dashboard')
+  await page.getByRole('button', { name: 'Generate app' }).click()
+
+  await expect(page.getByRole('tab', { name: 'Response 1' })).toBeVisible({ timeout: 20_000 })
+  await page.getByRole('tab', { name: 'Response 2' }).click()
+  await expect(page.getByRole('button', { name: 'Use Response 2' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Use Response 1' })).toBeHidden()
+
+  await page.getByRole('tab', { name: 'Chat' }).click()
+  await expect(page.locator('[data-variation-activity]')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Use Response 2' })).toBeHidden()
 })

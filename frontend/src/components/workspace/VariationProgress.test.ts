@@ -13,27 +13,32 @@ const candidates: Record<string, CandidateProgress> = {
 describe('VariationProgress', () => {
   it('renders only the phase supplied by real events', () => {
     const wrapper = mount(VariationProgress, { props: { phase: 'grading', candidates } })
-    expect(wrapper.text()).toContain('Comparing the strongest results')
+    expect(wrapper.text()).toContain('Comparing the strongest responses')
     expect(wrapper.text()).not.toMatch(/\d+%/)
   })
 
-  it('uses the approved copy for every phase and never invents one', () => {
+  it('uses response language for every phase and never invents one', () => {
     for (const [phase, copy] of Object.entries({
-      planning: 'Preparing four distinct directions',
-      generating: 'Building four candidates, two at a time',
-      validating: 'Checking each candidate against your request',
-      preparing: 'Preparing the two finalists',
+      planning: 'Preparing response briefs',
+      generating: 'Generating code for four responses',
+      validating: 'Checking each response against your request',
+      preparing: 'Loading the two final previews',
     })) {
       const wrapper = mount(VariationProgress, { props: { phase: phase as never, candidates } })
       expect(wrapper.text()).toContain(copy)
     }
   })
 
-  it('shows one status row per candidate and marks a failed one neutrally', () => {
+  it('uses two preview placeholders instead of a standalone hero', () => {
     const wrapper = mount(VariationProgress, { props: { phase: 'generating', candidates } })
-    expect(wrapper.findAll('[data-candidate-status]')).toHaveLength(4)
-    expect(wrapper.text()).toContain("Didn't finish")
-    expect(wrapper.text()).not.toMatch(/error|exception|stack/i)
+    expect(wrapper.findAll('[data-response-placeholder]')).toHaveLength(2)
+    expect(wrapper.find('h2').exists()).toBe(false)
+  })
+
+  it('keeps internal candidate details off the preview canvas', () => {
+    const wrapper = mount(VariationProgress, { props: { phase: 'generating', candidates } })
+    expect(wrapper.findAll('[data-candidate-status]')).toHaveLength(0)
+    expect(wrapper.text()).not.toMatch(/candidate|direction/i)
   })
 
   it('announces progress politely without exposing candidate identifiers', () => {

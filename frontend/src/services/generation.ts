@@ -213,7 +213,7 @@ export async function selectVariationFinalist(
   candidateId: string,
   idToken?: string,
 ): Promise<{ snapshotId: string; files: Record<string, string> }> {
-  if (!idToken) throw new Error('Sign in again to choose a direction.')
+  if (!idToken) throw new Error('Sign in again to choose a response.')
   return authenticatedRequest<{ snapshotId: string; files: Record<string, string> }>(
     `projects/${encodeURIComponent(projectId)}/variation-sets/${encodeURIComponent(variationSetId)}/selection`,
     idToken,

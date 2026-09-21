@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { GeneratedApplication } from './application.js'
-import { combineScores, gradeVariations, rankCandidates, type GraderCandidate } from './variation-grader.js'
+import { gradeVariations, rankCandidates, type GraderCandidate } from './variation-grader.js'
 import type { FeatureContract, VariationBrief } from './variation-types.js'
 
 const createMock = vi.fn()
@@ -73,8 +73,7 @@ function rubricFor(alias: string, fidelity = 25) {
     accessibility: 8,
     responsiveness: 4,
     maintainability: 4,
-    strengths: ['Clear list hierarchy'],
-    risks: ['No empty state for search'],
+    standout: 'Loads the contact list immediately on open, before any search is typed.',
     evidence: [{ path: 'app.js', detail: 'Calls contacts.list on load' }],
   }
 }
@@ -87,19 +86,9 @@ function respondWith(handler: (schemaName: string, body: Record<string, unknown>
 }
 
 function defaultGrader() {
-  respondWith((schemaName, body) => {
-    if (schemaName === 'genesis_variation_rubric') {
-      const alias = String(body.input).match(/CANDIDATE ALIAS: ([\w-]+)/)?.[1] ?? 'unknown'
-      return rubricFor(alias)
-    }
-    const aliases = [...String(body.input).matchAll(/"alias": ?"([\w-]+)"/g)].map((match) => match[1]!)
-    const comparisons: Array<Record<string, unknown>> = []
-    for (let a = 0; a < aliases.length; a += 1) {
-      for (let b = a + 1; b < aliases.length; b += 1) {
-        comparisons.push({ aliasA: aliases[a], aliasB: aliases[b], winner: aliases[a], confidence: 0.7, evidence: 'More complete search.' })
-      }
-    }
-    return { comparisons }
+  respondWith((_schemaName, body) => {
+    const alias = String(body.input).match(/CANDIDATE ALIAS: ([\w-]+)/)?.[1] ?? 'unknown'
+    return rubricFor(alias)
   })
 }
 
@@ -141,23 +130,32 @@ describe('gradeVariations blinding', () => {
     expect(String(injected![0].input)).toContain('BEGIN UNTRUSTED CANDIDATE SOURCE')
   })
 
-  it('grades every eligible candidate independently and then compares the top three', async () => {
+  it('grades every eligible candidate independently and ranks by rubric score alone', async () => {
     const result = await gradeVariations({ prompt: 'Build contacts', featureContract, candidates, signal })
     const schemaNames = createMock.mock.calls.map((call) => call[0].text.format.name)
     expect(schemaNames.filter((name: string) => name === 'genesis_variation_rubric')).toHaveLength(4)
-    expect(schemaNames.filter((name: string) => name === 'genesis_variation_pairwise')).toHaveLength(1)
     expect(result.gradingMode).toBe('full')
     expect(result.ranked).toHaveLength(4)
     expect(new Set(result.ranked.map((entry) => entry.candidateId))).toEqual(
       new Set(['candidate-a', 'candidate-b', 'candidate-c', 'candidate-d']),
     )
   })
+
+  it('reports progress once per candidate scored', async () => {
+    const onProgress = vi.fn()
+    await gradeVariations({ prompt: 'Build contacts', featureContract, candidates, signal, onProgress })
+    expect(onProgress).toHaveBeenCalledTimes(4)
+    expect(onProgress).toHaveBeenLastCalledWith(4, 4)
+  })
 })
 
-describe('score combination and ranking', () => {
-  it('uses seventy percent rubric and thirty percent pairwise score', () => {
-    expect(combineScores(80, 100)).toBe(86)
-    expect(combineScores(100, 0)).toBe(70)
+describe('ranking', () => {
+  it('orders candidates by rubric total, highest first', () => {
+    const scores = [
+      { alias: 'opaque-a', rubric: rubricFor('opaque-a', 20), deterministicScore: 80 },
+      { alias: 'opaque-b', rubric: rubricFor('opaque-b', 25), deterministicScore: 80 },
+    ]
+    expect(rankCandidates(scores).map((entry) => entry.alias)).toEqual(['opaque-b', 'opaque-a'])
   })
 
   it('breaks ties by fidelity, correctness, then opaque alias', () => {
@@ -165,17 +163,7 @@ describe('score combination and ranking', () => {
       { alias: 'opaque-a', rubric: { ...rubricFor('opaque-a', 20), functionalCorrectness: 25 }, deterministicScore: 80 },
       { alias: 'opaque-b', rubric: { ...rubricFor('opaque-b', 25), functionalCorrectness: 20 }, deterministicScore: 80 },
     ]
-    const tiedPairs = [{ aliasA: 'opaque-a', aliasB: 'opaque-b', winner: 'tie' as const, confidence: 0.5, evidence: 'Equivalent.' }]
-    expect(rankCandidates(tiedScores, tiedPairs).map((entry) => entry.alias)).toEqual(['opaque-b', 'opaque-a'])
-  })
-
-  it('orders a clear pairwise winner ahead of an equally scored sibling', () => {
-    const scores = [
-      { alias: 'opaque-a', rubric: rubricFor('opaque-a'), deterministicScore: 80 },
-      { alias: 'opaque-b', rubric: rubricFor('opaque-b'), deterministicScore: 80 },
-    ]
-    const pairs = [{ aliasA: 'opaque-a', aliasB: 'opaque-b', winner: 'opaque-b', confidence: 0.9, evidence: 'Handles errors.' }]
-    expect(rankCandidates(scores, pairs).map((entry) => entry.alias)).toEqual(['opaque-b', 'opaque-a'])
+    expect(rankCandidates(tiedScores).map((entry) => entry.alias)).toEqual(['opaque-b', 'opaque-a'])
   })
 })
 
@@ -205,12 +193,8 @@ describe('grader resilience', () => {
         attempted = true
         return { output_text: '{"alias":' }
       }
-      const schemaName = (body as { text: { format: { name: string } } }).text.format.name
-      if (schemaName === 'genesis_variation_rubric') {
-        const alias = String(body.input).match(/CANDIDATE ALIAS: ([\w-]+)/)?.[1] ?? 'unknown'
-        return { output_text: JSON.stringify(rubricFor(alias)) }
-      }
-      return { output_text: JSON.stringify({ comparisons: [] }) }
+      const alias = String(body.input).match(/CANDIDATE ALIAS: ([\w-]+)/)?.[1] ?? 'unknown'
+      return { output_text: JSON.stringify(rubricFor(alias)) }
     })
     const result = await gradeVariations({ prompt: 'Build contacts', featureContract, candidates, signal })
     expect(result.gradingMode).toBe('full')

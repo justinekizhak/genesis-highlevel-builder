@@ -129,26 +129,11 @@ export const rubricSchema = z.object({
   accessibility: z.number().int().min(0).max(10),
   responsiveness: z.number().int().min(0).max(5),
   maintainability: z.number().int().min(0).max(5),
-  strengths: z.array(z.string()).max(3),
-  risks: z.array(z.string()).max(3),
+  standout: z.string().trim().min(1).max(220),
   evidence: z.array(z.object({ path: evidencePathSchema, detail: z.string() })).max(12),
 }).strict()
 
 export type RubricScore = z.infer<typeof rubricSchema>
-
-export const pairwiseComparisonSchema = z.object({
-  aliasA: z.string(),
-  aliasB: z.string(),
-  winner: z.string(),
-  confidence: z.number().min(0).max(1),
-  evidence: z.string(),
-}).strict()
-
-export type PairwiseComparison = z.infer<typeof pairwiseComparisonSchema>
-
-export const pairwiseResultSchema = z.object({
-  comparisons: z.array(pairwiseComparisonSchema).max(6),
-}).strict()
 
 export type CandidateScore = {
   alias: string
@@ -161,12 +146,9 @@ export type RankedCandidate = {
   candidateId?: string
   internalRank: number
   rubricScore: number
-  pairwiseScore: number
-  combinedScore: number
   rubric?: RubricScore
   scoreBreakdown: Record<string, number>
-  strengths: string[]
-  risks: string[]
+  standout: string
 }
 
 export type GradingMode = 'full' | 'deterministic_fallback'
@@ -178,12 +160,17 @@ const rubricJsonProperties = Object.fromEntries(
 export const rubricJsonSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['alias', ...Object.keys(rubricCriteria), 'strengths', 'risks', 'evidence'],
+  required: ['alias', ...Object.keys(rubricCriteria), 'standout', 'evidence'],
   properties: {
     alias: { type: 'string' },
     ...rubricJsonProperties,
-    strengths: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 240 } },
-    risks: { type: 'array', maxItems: 3, items: { type: 'string', maxLength: 240 } },
+    standout: {
+      type: 'string',
+      maxLength: 220,
+      description: 'One or two plain sentences telling the end user the single most decision-relevant thing '
+        + 'that distinguishes this candidate, so they can choose quickly. Name the exact feature, layout choice, '
+        + 'or interaction — never generic praise, never scores or rubric language.',
+    },
     evidence: {
       type: 'array',
       maxItems: 12,
@@ -194,30 +181,6 @@ export const rubricJsonSchema = {
         properties: {
           path: { type: 'string', enum: ['index.html', 'styles.css', 'app.js'] },
           detail: { type: 'string', maxLength: 400 },
-        },
-      },
-    },
-  },
-} as const
-
-export const pairwiseJsonSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['comparisons'],
-  properties: {
-    comparisons: {
-      type: 'array',
-      maxItems: 6,
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['aliasA', 'aliasB', 'winner', 'confidence', 'evidence'],
-        properties: {
-          aliasA: { type: 'string' },
-          aliasB: { type: 'string' },
-          winner: { type: 'string' },
-          confidence: { type: 'number', minimum: 0, maximum: 1 },
-          evidence: { type: 'string', maxLength: 400 },
         },
       },
     },

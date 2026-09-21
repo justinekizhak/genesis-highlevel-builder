@@ -45,8 +45,7 @@ export type VariationFinalist = {
   displayName: VariationDisplayName
   summary: string
   files: Record<string, string>
-  strengths: string[]
-  risks: string[]
+  standout: string
   scoreBreakdown: Record<string, number>
   model: string
   usage: TokenUsage
@@ -219,6 +218,9 @@ export async function runVariationGeneration(input: VariationRunInput): Promise<
     featureContract,
     candidates: graderCandidates,
     signal: input.signal,
+    onProgress: (completedCount, totalCount) => {
+      input.onEvent({ type: 'variation_grading_progress', completedCount, totalCount })
+    },
   })
   input.onEvent({ type: 'variation_grading_complete', gradingMode: grading.gradingMode })
 
@@ -235,8 +237,7 @@ export async function runVariationGeneration(input: VariationRunInput): Promise<
         displayName: displayNames[position]!,
         summary: entry.result.application.summary,
         files: Object.fromEntries(entry.result.application.files.map((file) => [file.path, file.content])),
-        strengths: ranked.strengths,
-        risks: ranked.risks,
+        standout: ranked.standout,
         scoreBreakdown: ranked.scoreBreakdown,
         model: input.model,
         usage: entry.result.usage,

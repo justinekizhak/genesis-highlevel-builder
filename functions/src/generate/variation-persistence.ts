@@ -15,8 +15,7 @@ export type PersistableFinalist = {
   displayName: VariationDisplayName
   summary: string
   files: Record<string, string>
-  strengths: string[]
-  risks: string[]
+  standout: string
   scoreBreakdown: Record<string, number>
   model: string
   usage: TokenUsage
@@ -41,8 +40,7 @@ export type VariationFinalistPayload = {
   displayName: VariationDisplayName
   summary: string
   files: Record<string, string>
-  strengths: string[]
-  risks: string[]
+  standout: string
 }
 
 export type VariationSetPayload = {
@@ -95,8 +93,7 @@ export async function persistVariationFinalists(input: PersistVariationFinalists
       displayName: finalist.displayName,
       summary: finalist.summary,
       files: finalist.files,
-      strengths: finalist.strengths,
-      risks: finalist.risks,
+      standout: finalist.standout,
       scoreBreakdown: finalist.scoreBreakdown,
       model: finalist.model,
       usage: finalist.usage,
@@ -141,8 +138,7 @@ export async function loadVariationSet(uid: string, projectId: string, variation
       displayName: document.get('displayName') as VariationDisplayName,
       summary: (document.get('summary') as string) ?? '',
       files: (document.get('files') as Record<string, string>) ?? {},
-      strengths: (document.get('strengths') as string[]) ?? [],
-      risks: (document.get('risks') as string[]) ?? [],
+      standout: (document.get('standout') as string) ?? '',
     })),
   }
 }

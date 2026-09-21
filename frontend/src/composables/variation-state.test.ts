@@ -24,8 +24,8 @@ const metadata: GenerationEvent = {
   type: 'finalist_metadata',
   variationSetId: 'set-1',
   finalists: [
-    { candidateId: 'a', displayName: 'Direction A', summary: 'Compact table', strengths: ['Scannable'], risks: ['Dense'] },
-    { candidateId: 'b', displayName: 'Direction B', summary: 'Split rail', strengths: ['Roomy'], risks: ['Scrolls'] },
+    { candidateId: 'a', displayName: 'Direction A', summary: 'Compact table', standout: 'Scannable rows at a glance.' },
+    { candidateId: 'b', displayName: 'Direction B', summary: 'Split rail', standout: 'Roomy layout with fewer clicks.' },
   ],
 }
 
@@ -132,8 +132,8 @@ describe('reduceVariationEvent', () => {
 
   it('orders finalists by display name regardless of arrival order', () => {
     const ordered = orderFinalists([
-      { candidateId: 'b', displayName: 'Direction B', summary: '', strengths: [], risks: [], files: {} },
-      { candidateId: 'a', displayName: 'Direction A', summary: '', strengths: [], risks: [], files: {} },
+      { candidateId: 'b', displayName: 'Direction B', summary: '', standout: '', files: {} },
+      { candidateId: 'a', displayName: 'Direction A', summary: '', standout: '', files: {} },
     ])
     expect(ordered.map((finalist) => finalist.candidateId)).toEqual(['a', 'b'])
   })

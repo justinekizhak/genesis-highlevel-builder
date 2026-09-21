@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { IconArchive, IconClockPause, IconFileDiff, IconHistory, IconPencil, IconSparkles, IconX } from '@tabler/icons-vue'
+import { IconArchive, IconClockPause, IconFileDiff, IconHistory, IconLayoutGrid, IconPencil, IconSparkles, IconX } from '@tabler/icons-vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
@@ -170,7 +170,16 @@ function pasteAsPlainText(event: ClipboardEvent) {
                 <TooltipContent side="top">{{ kindLabel(snapshot) }}</TooltipContent>
               </Tooltip>
               <span class="snapshot-list-content">
-                <Badge v-if="snapshot.id === props.currentSnapshotId" class="snapshot-current-badge">Current</Badge>
+                <span class="snapshot-list-tags">
+                  <Badge v-if="snapshot.id === props.currentSnapshotId" class="snapshot-current-badge">Current</Badge>
+                  <Tooltip v-if="snapshot.variationSetId">
+                    <TooltipTrigger as="span" class="snapshot-variations-badge">
+                      <IconLayoutGrid :size="10" :stroke-width="2" />
+                      Variations
+                    </TooltipTrigger>
+                    <TooltipContent side="top">This version was generated with multiple variations</TooltipContent>
+                  </Tooltip>
+                </span>
                 <strong>{{ snapshotMessage(snapshot) }}</strong>
                 <span class="snapshot-list-footer">
                   <time :title="fullTimestamp(snapshot.createdAt)">{{ relativeTime(snapshot.createdAt) }}</time>
@@ -190,6 +199,10 @@ function pasteAsPlainText(event: ClipboardEvent) {
             <IconFileDiff :size="16" />
             <time :title="fullTimestamp(selectedSnapshot.createdAt)">{{ fullTimestamp(selectedSnapshot.createdAt) }}</time>
             <span>{{ kindLabel(selectedSnapshot) }}</span>
+            <span v-if="selectedSnapshot.variationSetId" class="snapshot-detail-variations">
+              <IconLayoutGrid :size="12" :stroke-width="2" />
+              Multiple variations
+            </span>
           </div>
           <div v-if="isEditing(selectedSnapshot, 'message')" class="snapshot-field-edit">
             <h3
@@ -263,6 +276,7 @@ function pasteAsPlainText(event: ClipboardEvent) {
           size="sm"
           variant="secondary"
           data-compare-finalist
+          class="ml-auto"
           @click="emit('compareVariation', selectedSnapshot.variationSetId)"
         >
           Compare finalist

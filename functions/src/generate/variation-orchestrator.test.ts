@@ -86,11 +86,8 @@ beforeEach(() => {
       candidateId: candidate.candidateId,
       internalRank: index + 1,
       rubricScore: 90 - index,
-      pairwiseScore: 50,
-      combinedScore: 80 - index,
       scoreBreakdown: { featureFidelity: 28 },
-      strengths: ['Clear hierarchy'],
-      risks: ['No empty state'],
+      standout: 'Keeps the contact list visible while editing a record.',
     })),
   }))
 })
