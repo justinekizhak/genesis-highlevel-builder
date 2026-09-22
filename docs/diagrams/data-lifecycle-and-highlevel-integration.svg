@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1650" height="940" viewBox="0 0 1650 940" role="img" aria-labelledby="title desc">
+  <title id="title">Data Model, Lifecycle &amp; HighLevel Integration</title>
+  <desc id="desc">High-level Genesis diagram. Editable Excalidraw source is stored beside this SVG.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="context-stroke"/></marker>
+    <filter id="rough" x="-5%" y="-7%" width="110%" height="114%"><feTurbulence type="fractalNoise" baseFrequency="0.025 0.12" numOctaves="2" seed="41" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.7"/></filter>
+    <filter id="rough-line" x="-8%" y="-12%" width="116%" height="124%"><feTurbulence type="fractalNoise" baseFrequency="0.04 0.18" numOctaves="2" seed="17" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2"/></filter>
+    <style>.heading{font:700 30px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-title{font:700 17px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-body{font:14px "Marker Felt","Comic Sans MS",cursive;fill:#495057}.edge-label{font:700 13px "Marker Felt","Comic Sans MS",cursive}</style>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="40" y="51" class="heading">Data Model, Lifecycle &amp; HighLevel Integration</text>
+  <path d="M35 70 Q 825 66 1615 70" stroke="#1e1e1e" stroke-width="1" opacity=".22" fill="none" filter="url(#rough-line)"/>
+  <g><path d="M 340 195 Q 363 191 380 195" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="302" y="179" width="116" height="23" rx="3" fill="#ffffff"/><text x="360" y="196" text-anchor="middle" class="edge-label" fill="#495057">every read/write</text></g>
+<g><path d="M 600 195 Q 623 191 640 195" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 850 195 Q 873 191 890 195" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="812" y="179" width="116" height="23" rx="3" fill="#ffffff"/><text x="870" y="196" text-anchor="middle" class="edge-label" fill="#495057">commit</text></g>
+<g><path d="M 1140 195 Q 1163 191 1180 195" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="1102" y="179" width="116" height="23" rx="3" fill="#ffffff"/><text x="1160" y="196" text-anchor="middle" class="edge-label" fill="#495057">history UI</text></g>
+<g><path d="M 1310 290 Q 1030.5 286 745 290" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="969.5" y="274" width="116" height="23" rx="3" fill="#ffffff"/><text x="1027.5" y="291" text-anchor="middle" class="edge-label" fill="#495057">overwrite</text></g>
+<g><path d="M 260 435 Q 283 431 300 435" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="222" y="419" width="116" height="23" rx="3" fill="#ffffff"/><text x="280" y="436" text-anchor="middle" class="edge-label" fill="#495057">consent</text></g>
+<g><path d="M 550 435 Q 573 431 590 435" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 850 435 Q 873 431 890 435" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="812" y="419" width="116" height="23" rx="3" fill="#ffffff"/><text x="870" y="436" text-anchor="middle" class="edge-label" fill="#495057">resolve/rotate</text></g>
+<g><path d="M 260 685 Q 283 681 300 685" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="222" y="669" width="116" height="23" rx="3" fill="#ffffff"/><text x="280" y="686" text-anchor="middle" class="edge-label" fill="#495057">bridge call</text></g>
+<g><path d="M 580 685 Q 603 681 620 685" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="542" y="669" width="116" height="23" rx="3" fill="#ffffff"/><text x="600" y="686" text-anchor="middle" class="edge-label" fill="#495057">resolve token</text></g>
+<g><path d="M 500 590 Q 613 508.5 720 435" fill="none" stroke="#0b7285" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="552" y="496.5" width="116" height="23" rx="3" fill="#ffffff"/><text x="610" y="513.5" text-anchor="middle" class="edge-label" fill="#0b7285">token</text></g>
+<g><path d="M 840 685 Q 863 681 880 685" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="802" y="669" width="116" height="23" rx="3" fill="#ffffff"/><text x="860" y="686" text-anchor="middle" class="edge-label" fill="#495057">1 allowlisted call</text></g>
+<g><path d="M 730 590 Q 873 633.5 1010 685" fill="none" stroke="#0b7285" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="812" y="621.5" width="116" height="23" rx="3" fill="#ffffff"/><text x="870" y="638.5" text-anchor="middle" class="edge-label" fill="#0b7285">async events</text></g>
+<g><path d="M 1160 685 Q 1183 681 1200 685" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="1122" y="669" width="116" height="23" rx="3" fill="#ffffff"/><text x="1180" y="686" text-anchor="middle" class="edge-label" fill="#495057">relevant types</text></g>
+<g><path d="M 1250 590 Q 758 586 260 590" fill="none" stroke="#2b8a3e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="697" y="574" width="116" height="23" rx="3" fill="#ffffff"/><text x="755" y="591" text-anchor="middle" class="edge-label" fill="#2b8a3e">live relay</text></g>
+  <g><rect x="40" y="100" width="300" height="190" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="190" y="132" text-anchor="middle" class="node-title">Firestore collections</text><text x="190" y="161" text-anchor="middle" class="node-body">projects · files · messages</text>
+<text x="190" y="180" text-anchor="middle" class="node-body">snapshots · variationSets/candidates</text>
+<text x="190" y="199" text-anchor="middle" class="node-body">highlevelConnections · oauthStates</text>
+<text x="190" y="218" text-anchor="middle" class="node-body">rateLimits · webhookDedupe · hlEvents</text></g>
+<g><rect x="380" y="100" width="220" height="190" rx="9" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="490" y="132" text-anchor="middle" class="node-title">Ownership isolation</text><text x="490" y="161" text-anchor="middle" class="node-body">requireOwnedProject(uid, id)</text>
+<text x="490" y="180" text-anchor="middle" class="node-body">enforced in Functions</text>
+<text x="490" y="199" text-anchor="middle" class="node-body">and mirrored in Firestore rules</text></g>
+<g><rect x="640" y="100" width="210" height="190" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="745" y="132" text-anchor="middle" class="node-title">Live files</text><text x="745" y="161" text-anchor="middle" class="node-body">files/ subcollection</text>
+<text x="745" y="180" text-anchor="middle" class="node-body">used by editor + preview</text></g>
+<g><rect x="890" y="100" width="250" height="190" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="1015" y="132" text-anchor="middle" class="node-title">Append-only snapshots</text><text x="1015" y="161" text-anchor="middle" class="node-body">kind: generation · manual</text>
+<text x="1015" y="180" text-anchor="middle" class="node-body">partial · backup</text></g>
+<g><rect x="1180" y="100" width="260" height="190" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1310" y="132" text-anchor="middle" class="node-title">Restore</text><text x="1310" y="161" text-anchor="middle" class="node-body">Back up current files first,</text>
+<text x="1310" y="180" text-anchor="middle" class="node-body">then overwrite live files,</text>
+<text x="1310" y="199" text-anchor="middle" class="node-body">update latestSnapshotId</text></g>
+<g><rect x="40" y="350" width="220" height="170" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="150" y="382" text-anchor="middle" class="node-title">Connect HighLevel</text><text x="150" y="411" text-anchor="middle" class="node-body">hlOAuthStart</text>
+<text x="150" y="430" text-anchor="middle" class="node-body">oauthStates doc, 10 min TTL</text></g>
+<g><rect x="300" y="350" width="250" height="170" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="425" y="382" text-anchor="middle" class="node-title">hlAuthCallback</text><text x="425" y="411" text-anchor="middle" class="node-body">exchange code for tokens</text>
+<text x="425" y="430" text-anchor="middle" class="node-body">backfill locationId on projects</text></g>
+<g><rect x="590" y="350" width="260" height="170" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="720" y="382" text-anchor="middle" class="node-title">highlevelConnections/{uid}</text><text x="720" y="411" text-anchor="middle" class="node-body">access/refresh tokens</text>
+<text x="720" y="430" text-anchor="middle" class="node-body">expiresAt · locationId</text></g>
+<g><rect x="890" y="350" width="280" height="170" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1030" y="382" text-anchor="middle" class="node-title">Lazy refresh + lease</text><text x="1030" y="411" text-anchor="middle" class="node-body">refreshes when &lt;60s to expiry</text>
+<text x="1030" y="430" text-anchor="middle" class="node-body">30s Firestore lease</text>
+<text x="1030" y="449" text-anchor="middle" class="node-body">rotates both tokens</text></g>
+<g><rect x="40" y="590" width="220" height="190" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="150" y="622" text-anchor="middle" class="node-title">Generated app iframe</text><text x="150" y="651" text-anchor="middle" class="node-body">window.genesis.highlevel</text>
+<text x="150" y="670" text-anchor="middle" class="node-body">bridge, no direct network</text></g>
+<g><rect x="300" y="590" width="280" height="190" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="440" y="622" text-anchor="middle" class="node-title">hlProxy</text><text x="440" y="651" text-anchor="middle" class="node-body">auth · 60/min rate limit</text>
+<text x="440" y="670" text-anchor="middle" class="node-body">8-operation allowlist</text>
+<text x="440" y="689" text-anchor="middle" class="node-body">injects locationId server-side</text></g>
+<g><rect x="620" y="590" width="220" height="190" rx="9" fill="#c5f6fa" stroke="#0b7285" stroke-width="2.2" filter="url(#rough)"/><text x="730" y="622" text-anchor="middle" class="node-title">HighLevel API</text><text x="730" y="651" text-anchor="middle" class="node-body">contacts · conversations</text>
+<text x="730" y="670" text-anchor="middle" class="node-body">calendars · appointments</text></g>
+<g><rect x="880" y="590" width="280" height="190" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1020" y="622" text-anchor="middle" class="node-title">hlWebhook</text><text x="1020" y="651" text-anchor="middle" class="node-body">Ed25519 signature verify</text>
+<text x="1020" y="670" text-anchor="middle" class="node-body">webhookDedupe atomic claim</text>
+<text x="1020" y="689" text-anchor="middle" class="node-body">maps locationId → uid</text></g>
+<g><rect x="1200" y="590" width="260" height="190" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="1330" y="622" text-anchor="middle" class="node-title">users/{uid}/hlEvents</text><text x="1330" y="651" text-anchor="middle" class="node-body">Contact/Message/Appointment</text>
+<text x="1330" y="670" text-anchor="middle" class="node-body">events relayed live to the iframe</text>
+<text x="1330" y="689" text-anchor="middle" class="node-body">UNINSTALL deletes the connection</text></g>
+</svg>

@@ -10,6 +10,8 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconChevronDown,
+  IconCircleCheck,
+  IconClock,
   IconCode,
   IconCommand,
   IconDownload,
@@ -158,8 +160,10 @@ const renamingSnapshotId = ref<string>()
 const snapshotRenameError = ref('')
 const saveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const stoppedNotice = ref('')
+const completedNotice = ref('')
 const filesTouchedThisGeneration = ref<string[]>([])
 const currentGenerationId = ref<string>()
+const generationElapsedMs = ref(0)
 const currentSnapshotId = ref<string>()
 const mobilePanel = ref<'chat' | 'code' | 'preview'>('chat')
 const chatCollapsed = ref(false)
@@ -187,6 +191,8 @@ let filesBeforeGeneration: Record<string, GeneratedFile> | undefined
 let saveTimer: number | undefined
 let savedIndicatorTimer: number | undefined
 let cancelFallbackTimer: number | undefined
+let generationStartedAt: number | undefined
+let generationTicker: number | undefined
 const bridgeRequests = new Set<string>()
 let workspaceAnimation: { cancel?: () => void } | undefined
 
@@ -199,6 +205,7 @@ const statusLabel = computed(() => {
   if (isGenerating.value) return 'Generating'
   return 'Ready'
 })
+const generationElapsedLabel = computed(() => formatElapsed(generationElapsedMs.value))
 const projectId = computed(() => String(route.params.projectId ?? 'local-demo'))
 const projectTitle = computed(() => projectsStore.projects.find((project) => project.id === projectId.value)?.name ?? 'Untitled project')
 const workspaceStyle = computed(() => {
@@ -495,6 +502,7 @@ onBeforeUnmount(() => {
   if (saveTimer) window.clearTimeout(saveTimer)
   if (savedIndicatorTimer) window.clearTimeout(savedIndicatorTimer)
   if (cancelFallbackTimer) window.clearTimeout(cancelFallbackTimer)
+  window.clearInterval(generationTicker)
   controller?.abort()
   disposeAllModels()
   workspaceAnimation?.cancel?.()
@@ -659,6 +667,39 @@ function formatTokenCount(value: number) {
   return value >= 1000 ? `${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k` : String(value)
 }
 
+function formatElapsed(ms: number) {
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return minutes > 0 ? `${minutes}:${String(seconds).padStart(2, '0')}` : `${seconds}s`
+}
+
+function formatDurationSentence(ms: number) {
+  const totalSeconds = Math.max(1, Math.round(ms / 1000))
+  if (totalSeconds < 60) return `${totalSeconds} second${totalSeconds === 1 ? '' : 's'}`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  const minutePart = `${minutes} minute${minutes === 1 ? '' : 's'}`
+  return seconds === 0 ? minutePart : `${minutePart} ${seconds} second${seconds === 1 ? '' : 's'}`
+}
+
+function startGenerationStopwatch() {
+  window.clearInterval(generationTicker)
+  generationStartedAt = Date.now()
+  generationElapsedMs.value = 0
+  generationTicker = window.setInterval(() => {
+    if (generationStartedAt) generationElapsedMs.value = Date.now() - generationStartedAt
+  }, 250)
+}
+
+function stopGenerationStopwatch() {
+  window.clearInterval(generationTicker)
+  generationTicker = undefined
+  if (generationStartedAt) generationElapsedMs.value = Date.now() - generationStartedAt
+  generationStartedAt = undefined
+  return generationElapsedMs.value
+}
+
 function handleEvent(event: GenerationEvent) {
   if (isVariationEvent(event)) {
     variationGeneration.accept(event)
@@ -815,11 +856,13 @@ async function submitPrompt(suggestion?: string) {
   prompt.value = ''
   generationError.value = ''
   stoppedNotice.value = ''
+  completedNotice.value = ''
   variationActivityItems.value = []
   filesTouchedThisGeneration.value = []
   showInlineDiff.value = false
   streamingFilePath.value = undefined
   isGenerating.value = true
+  startGenerationStopwatch()
   const promptMessageId = crypto.randomUUID()
   messages.value.push({ id: promptMessageId, role: 'user', content: value })
   pendingPromptMessageId.value = promptMessageId
@@ -844,6 +887,7 @@ async function submitPrompt(suggestion?: string) {
     }
   } finally {
     const wasStopped = isStopping.value
+    const elapsedMs = stopGenerationStopwatch()
     if (cancelFallbackTimer) window.clearTimeout(cancelFallbackTimer)
     cancelFallbackTimer = undefined
     isGenerating.value = false
@@ -851,6 +895,8 @@ async function submitPrompt(suggestion?: string) {
     controller = undefined
     if (wasStopped) {
       stoppedNotice.value = `Stopped after ${filesTouchedThisGeneration.value.length} file${filesTouchedThisGeneration.value.length === 1 ? '' : 's'}. Nothing lost. Partial output stays in the editor.`
+    } else if (!generationError.value) {
+      completedNotice.value = `Completed in ${formatDurationSentence(elapsedMs)}.`
     }
     await nextTick()
   }
@@ -1103,14 +1149,23 @@ defineExpose({
             </div>
           </article>
 
-          <div v-if="isGenerating && !isVariationActive" class="generation-progress">
+          <div v-if="isGenerating" class="generation-progress" :class="{ 'is-compact': isVariationActive }">
             <IconSparkles :size="15" />
             <span v-if="isStopping">Stopping generation…</span>
+            <span v-else-if="isVariationActive">Preparing two responses…</span>
             <span v-else>Writing file {{ filesTouchedThisGeneration.length }} · {{ activePath }}</span>
+            <span class="generation-stopwatch">
+              <IconClock :size="12" />
+              {{ generationElapsedLabel }}
+            </span>
           </div>
 
           <p v-if="generationError" class="error-message">{{ generationError }}</p>
           <p v-if="stoppedNotice" class="stopped-notice">{{ stoppedNotice }}</p>
+          <p v-if="completedNotice" class="completed-notice">
+            <IconCircleCheck :size="13" />
+            {{ completedNotice }}
+          </p>
         </div>
 
         <div v-if="!highLevelStore.connection.connected" class="connect-gate">

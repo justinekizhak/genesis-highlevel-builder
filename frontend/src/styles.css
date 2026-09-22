@@ -972,8 +972,14 @@ button { touch-action: manipulation; }
 .message-markdown pre { padding: 12px 14px; border-color: #30312c; border-radius: 10px; background: #0f100e; }
 .message-usage { display: block; margin-top: 7px; color: #6f7069; font: 500 10.5px/1.4 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .02em; cursor: default; }
 .generation-progress { margin: 2px 0 18px; padding: 10px 12px; border: 1px solid #4b422c; border-radius: 10px; background: #211d14; }
+.generation-progress.is-compact { margin-top: -6px; }
+.generation-progress span:not(.generation-stopwatch) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.generation-stopwatch { display: flex; align-items: center; gap: 4px; margin-left: auto; padding: 2px 7px; border-radius: 999px; background: #171308; color: #b0925a; font: 600 11px/1.4 "IBM Plex Mono", ui-monospace, monospace; letter-spacing: .01em; white-space: nowrap; }
+.generation-stopwatch svg { animation: none; }
 .error-message,
-.stopped-notice { padding: 11px 12px; border-radius: 10px; line-height: 1.5; }
+.stopped-notice,
+.completed-notice { padding: 11px 12px; border-radius: 10px; line-height: 1.5; }
+.completed-notice { display: flex; align-items: center; gap: 6px; border: 1px solid #2c3a2b; color: #9fc78e; background: #16200f; font-size: 12px; }
 
 .suggestions { gap: 7px; padding: 10px 14px 0; }
 .suggestions button {

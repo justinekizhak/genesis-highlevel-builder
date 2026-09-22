@@ -20,28 +20,13 @@ const palette = {
 
 const expectedRoles = {
   'system-architecture': {
-    'user-browser': 'ui', functions: 'service', firestore: 'data', openai: 'external', highlevel: 'external', auth: 'decision',
+    browser: 'ui', apiv1: 'service', firestore: 'data', openai: 'external', highlevel: 'external', guards: 'decision', cicd: 'neutral',
   },
-  'generation-flow': {
-    start: 'ui', guard: 'decision', model: 'external', valid: 'decision', persist: 'data', render: 'ui', partial: 'danger',
+  'generation-and-grading-pipeline': {
+    'gp-prompt': 'ui', 'gp-planner': 'external', 'gp-mode': 'decision', 'gp-pool': 'service', 'gp-persist': 'data', 'gp-abort': 'danger',
   },
-  'backend-capability-map': {
-    entry: 'ui', generation: 'service', firestore: 'data', openai: 'external', highlevel: 'external', guards: 'decision',
-  },
-  'oauth-token-lifecycle': {
-    connect: 'ui', state: 'decision', store: 'data', consent: 'external', ready: 'data', expiry: 'decision', call: 'external',
-  },
-  'highlevel-proxy-flow': {
-    action: 'ui', host: 'service', function: 'service', allowlist: 'decision', token: 'data', api: 'external', result: 'ui', boundary: 'decision',
-  },
-  'snapshot-restore-flow': {
-    generation: 'service', manual: 'ui', current: 'data', history: 'data', choose: 'ui', backup: 'data', replace: 'service',
-  },
-  'webhook-event-flow': {
-    event: 'external', endpoint: 'service', signature: 'decision', reject: 'danger', store: 'data', ui: 'ui',
-  },
-  'deployment-runtime-flow': {
-    developer: 'ui', ci: 'service', checks: 'decision', stop: 'danger', identity: 'decision', firebase: 'service', config: 'data', health: 'ui',
+  'data-lifecycle-and-highlevel-integration': {
+    'dl-collections': 'data', 'dl-isolation': 'decision', 'dl-connect': 'ui', 'dl-proxy': 'service', 'dl-hlapi': 'external',
   },
 }
 
@@ -75,19 +60,24 @@ test('generated diagrams preserve the shared semantic color language', () => {
   }
 })
 
-test('generated diagrams describe the public v1 API instead of legacy function URLs', () => {
+test('exactly three consolidated diagrams are produced, matching the documented current implementation', () => {
   execFileSync(process.execPath, [resolve(root, 'scripts/generate-doc-diagrams.mjs')], { cwd: root })
 
-  const capabilityMap = readFileSync(resolve(diagramsDir, 'backend-capability-map.svg'), 'utf8')
-  const proxyFlow = readFileSync(resolve(diagramsDir, 'highlevel-proxy-flow.svg'), 'utf8')
-  const deploymentFlow = readFileSync(resolve(diagramsDir, 'deployment-runtime-flow.svg'), 'utf8')
-  const systemArchitecture = readFileSync(resolve(diagramsDir, 'system-architecture.svg'), 'utf8')
-  const generationFlow = readFileSync(resolve(diagramsDir, 'generation-flow.svg'), 'utf8')
+  const names = Object.keys(expectedRoles)
+  assert.equal(names.length, 3)
 
-  assert.match(capabilityMap, /Hosting \/api\/v1 routes/)
-  assert.match(proxyFlow, /POST \/api\/v1\/integrations\/highlevel/)
-  assert.match(deploymentFlow, /Verify \/api\/v1\/health/)
-  assert.doesNotMatch(deploymentFlow, /\/api\/healthz/)
-  assert.match(systemArchitecture, /SPA \+ \/api\/v1 routes/)
-  assert.match(generationFlow, /iframe → postMessage → \/api\/v1 proxy/)
+  const systemArchitecture = readFileSync(resolve(diagramsDir, 'system-architecture.svg'), 'utf8')
+  const pipeline = readFileSync(resolve(diagramsDir, 'generation-and-grading-pipeline.svg'), 'utf8')
+  const lifecycle = readFileSync(resolve(diagramsDir, 'data-lifecycle-and-highlevel-integration.svg'), 'utf8')
+
+  assert.match(systemArchitecture, /apiV1/)
+  assert.match(systemArchitecture, /GitHub Actions CI\/CD/)
+
+  // Regression guard: candidates run at full concurrency (4), not the older "concurrency 2".
+  assert.match(pipeline, /concurrency = 4/)
+  assert.doesNotMatch(pipeline, /concurrency 2/)
+  assert.match(pipeline, /No pairwise comparison pass/)
+
+  assert.match(lifecycle, /hlProxy/)
+  assert.match(lifecycle, /hlWebhook/)
 })

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1650" height="1020" viewBox="0 0 1650 1020" role="img" aria-labelledby="title desc">
+  <title id="title">Generation &amp; Multi-Variation Grading Pipeline</title>
+  <desc id="desc">High-level Genesis diagram. Editable Excalidraw source is stored beside this SVG.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="context-stroke"/></marker>
+    <filter id="rough" x="-5%" y="-7%" width="110%" height="114%"><feTurbulence type="fractalNoise" baseFrequency="0.025 0.12" numOctaves="2" seed="41" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="1.7"/></filter>
+    <filter id="rough-line" x="-8%" y="-12%" width="116%" height="124%"><feTurbulence type="fractalNoise" baseFrequency="0.04 0.18" numOctaves="2" seed="17" result="noise"/><feDisplacementMap in="SourceGraphic" in2="noise" scale="2"/></filter>
+    <style>.heading{font:700 30px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-title{font:700 17px "Marker Felt","Comic Sans MS",cursive;fill:#1e1e1e}.node-body{font:14px "Marker Felt","Comic Sans MS",cursive;fill:#495057}.edge-label{font:700 13px "Marker Felt","Comic Sans MS",cursive}</style>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="40" y="51" class="heading">Generation &amp; Multi-Variation Grading Pipeline</text>
+  <path d="M35 70 Q 825 66 1615 70" stroke="#1e1e1e" stroke-width="1" opacity=".22" fill="none" filter="url(#rough-line)"/>
+  <g><path d="M 260 175 Q 283 171 300 175" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 560 175 Q 583 171 600 175" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 780 175 Q 808 171 830 175" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="747" y="159" width="116" height="23" rx="3" fill="#ffffff"/><text x="805" y="176" text-anchor="middle" class="edge-label" fill="#495057">single</text></g>
+<g><path d="M 690 265 Q 563 298.5 430 340" fill="none" stroke="#7048e8" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="502" y="286.5" width="116" height="23" rx="3" fill="#ffffff"/><text x="560" y="303.5" text-anchor="middle" class="edge-label" fill="#7048e8">variations</text></g>
+<g><path d="M 560 420 Q 583 416 600 420" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="522" y="404" width="116" height="23" rx="3" fill="#ffffff"/><text x="580" y="421" text-anchor="middle" class="edge-label" fill="#495057">4 briefs</text></g>
+<g><path d="M 880 420 Q 913 416 940 420" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="852" y="404" width="116" height="23" rx="3" fill="#ffffff"/><text x="910" y="421" text-anchor="middle" class="edge-label" fill="#495057">4 results</text></g>
+<g><path d="M 1070 500 Q 753 536 430 580" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="692" y="524" width="116" height="23" rx="3" fill="#ffffff"/><text x="750" y="541" text-anchor="middle" class="edge-label" fill="#495057">validate</text></g>
+<g><path d="M 560 675 Q 583 671 600 675" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="522" y="659" width="116" height="23" rx="3" fill="#ffffff"/><text x="580" y="676" text-anchor="middle" class="edge-label" fill="#495057">≥2 eligible</text></g>
+<g><path d="M 560 720 Q 903 693.5 1240 675" fill="none" stroke="#c92a2a" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="842" y="681.5" width="116" height="23" rx="3" fill="#ffffff"/><text x="900" y="698.5" text-anchor="middle" class="edge-label" fill="#c92a2a">&lt; 2 eligible</text></g>
+<g><path d="M 900 675 Q 923 671 940 675" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="862" y="659" width="116" height="23" rx="3" fill="#ffffff"/><text x="920" y="676" text-anchor="middle" class="edge-label" fill="#495057">scores</text></g>
+<g><path d="M 1070 770 Q 753 791 430 820" fill="none" stroke="#2b8a3e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/><rect x="692" y="779" width="116" height="23" rx="3" fill="#ffffff"/><text x="750" y="796" text-anchor="middle" class="edge-label" fill="#2b8a3e">top 2</text></g>
+<g><path d="M 580 900 Q 608 896 630 900" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 890 900 Q 918 896 940 900" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+<g><path d="M 1200 900 Q 1223 896 1240 900" fill="none" stroke="#1e1e1e" stroke-width="2.2" marker-end="url(#arrow)" filter="url(#rough-line)"/></g>
+  <g><rect x="40" y="100" width="220" height="150" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="150" y="132" text-anchor="middle" class="node-title">User prompt</text><text x="150" y="161" text-anchor="middle" class="node-body">Raw request + chat history</text>
+<text x="150" y="180" text-anchor="middle" class="node-body">generateApp (SSE)</text></g>
+<g><rect x="300" y="90" width="260" height="170" rx="9" fill="#c5f6fa" stroke="#0b7285" stroke-width="2.2" filter="url(#rough)"/><text x="430" y="122" text-anchor="middle" class="node-title">Structured planner</text><text x="430" y="151" text-anchor="middle" class="node-body">Classify single vs variations</text>
+<text x="430" y="170" text-anchor="middle" class="node-body">Derive shared feature contract</text>
+<text x="430" y="189" text-anchor="middle" class="node-body">Confidence floor 0.8</text></g>
+<g><polygon points="690,85 780,175 690,265 600,175" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="690" y="117" text-anchor="middle" class="node-title">Mode?</text><text x="690" y="146" text-anchor="middle" class="node-body">single / variations</text></g>
+<g><rect x="830" y="100" width="260" height="150" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="960" y="132" text-anchor="middle" class="node-title">Single-generation path</text><text x="960" y="161" text-anchor="middle" class="node-body">Stream one app directly</text>
+<text x="960" y="180" text-anchor="middle" class="node-body">Persist a normal snapshot</text></g>
+<g><rect x="300" y="340" width="260" height="160" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="430" y="372" text-anchor="middle" class="node-title">4 variation briefs</text><text x="430" y="401" text-anchor="middle" class="node-body">One shared feature contract</text>
+<text x="430" y="420" text-anchor="middle" class="node-body">≥3 differentiators each</text>
+<text x="430" y="439" text-anchor="middle" class="node-body">No brief is called "best"</text></g>
+<g><rect x="600" y="340" width="280" height="160" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="740" y="372" text-anchor="middle" class="node-title">Candidate worker pool</text><text x="740" y="401" text-anchor="middle" class="node-body">4 parallel model calls</text>
+<text x="740" y="420" text-anchor="middle" class="node-body">concurrency = 4 (fully parallel)</text>
+<text x="740" y="439" text-anchor="middle" class="node-body">independent, isolated calls</text></g>
+<g><rect x="940" y="340" width="260" height="160" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="1070" y="372" text-anchor="middle" class="node-title">In-memory candidates</text><text x="1070" y="401" text-anchor="middle" class="node-body">3 files + usage each</text>
+<text x="1070" y="420" text-anchor="middle" class="node-body">Nothing streamed before ranking</text></g>
+<g><rect x="300" y="580" width="260" height="190" rx="9" fill="#fff3bf" stroke="#e67700" stroke-width="2.2" filter="url(#rough)"/><text x="430" y="612" text-anchor="middle" class="node-title">Deterministic qualify</text><text x="430" y="641" text-anchor="middle" class="node-body">Hard: schema, forbidden APIs,</text>
+<text x="430" y="660" text-anchor="middle" class="node-body">Vue runtime, app.js parses</text>
+<text x="430" y="679" text-anchor="middle" class="node-body">Soft: HL contracts, states,</text>
+<text x="430" y="698" text-anchor="middle" class="node-body">a11y, responsive scoring</text></g>
+<g><rect x="600" y="580" width="300" height="190" rx="9" fill="#c5f6fa" stroke="#0b7285" stroke-width="2.2" filter="url(#rough)"/><text x="750" y="612" text-anchor="middle" class="node-title">Blinded rubric grading</text><text x="750" y="641" text-anchor="middle" class="node-body">Shuffle + alias candidates</text>
+<text x="750" y="660" text-anchor="middle" class="node-body">Fidelity 30 · correctness 25</text>
+<text x="750" y="679" text-anchor="middle" class="node-body">robustness 15 · usability 10</text>
+<text x="750" y="698" text-anchor="middle" class="node-body">a11y 10 · responsive 5 · maint. 5</text></g>
+<g><rect x="940" y="580" width="260" height="190" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1070" y="612" text-anchor="middle" class="node-title">Deterministic ranking</text><text x="1070" y="641" text-anchor="middle" class="node-body">Total score → fidelity →</text>
+<text x="1070" y="660" text-anchor="middle" class="node-body">correctness → alias tiebreak</text>
+<text x="1070" y="679" text-anchor="middle" class="node-body">No pairwise comparison pass</text></g>
+<g><rect x="1240" y="580" width="230" height="190" rx="9" fill="#ffe3e3" stroke="#c92a2a" stroke-width="2.2" filter="url(#rough)"/><text x="1355" y="612" text-anchor="middle" class="node-title">&lt; 2 eligible: stop safely</text><text x="1355" y="641" text-anchor="middle" class="node-body">Persist nothing</text>
+<text x="1355" y="660" text-anchor="middle" class="node-body">Project stays unchanged</text></g>
+<g><rect x="300" y="820" width="280" height="160" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="440" y="852" text-anchor="middle" class="node-title">Persist top 2 finalists</text><text x="440" y="881" text-anchor="middle" class="node-body">variationSets/{id} + 2</text>
+<text x="440" y="900" text-anchor="middle" class="node-body">candidate docs; other 2</text>
+<text x="440" y="919" text-anchor="middle" class="node-body">candidates are discarded</text></g>
+<g><rect x="630" y="820" width="260" height="160" rx="9" fill="#dbe4ff" stroke="#4263eb" stroke-width="2.2" filter="url(#rough)"/><text x="760" y="852" text-anchor="middle" class="node-title">Comparison UI</text><text x="760" y="881" text-anchor="middle" class="node-body">VariationComparison.vue</text>
+<text x="760" y="900" text-anchor="middle" class="node-body">Direction A / B sandboxed iframes</text></g>
+<g><rect x="940" y="820" width="260" height="160" rx="9" fill="#e5dbff" stroke="#7048e8" stroke-width="2.2" filter="url(#rough)"/><text x="1070" y="852" text-anchor="middle" class="node-title">User selects a finalist</text><text x="1070" y="881" text-anchor="middle" class="node-body">selectVariationFinalist</text>
+<text x="1070" y="900" text-anchor="middle" class="node-body">checks base snapshot still current</text></g>
+<g><rect x="1240" y="820" width="230" height="160" rx="9" fill="#d3f9d8" stroke="#2b8a3e" stroke-width="2.2" filter="url(#rough)"/><text x="1355" y="852" text-anchor="middle" class="node-title">Promote to active</text><text x="1355" y="881" text-anchor="middle" class="node-body">New snapshot · replace files/</text>
+<text x="1355" y="900" text-anchor="middle" class="node-body">clear pendingVariationSetId</text></g>
+</svg>

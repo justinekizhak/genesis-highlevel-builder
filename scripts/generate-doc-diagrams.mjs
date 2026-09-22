@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -158,311 +158,115 @@ function writeDiagram(diagram) {
   writeFileSync(resolve(out, `${diagram.name}.svg`), svg)
 }
 
+// Consolidated to exactly 3 diagrams (previously 12, overlapping and partly stale).
+// Each one reflects the current implementation in functions/src and frontend/src as of the
+// "multi-response app feature" + "make the multi-generation faster" changes.
 const diagrams = [
   {
-    name: 'multi-app-backend-architecture', title: 'Multi-App Preview — Backend Architecture', width: 1400, height: 880,
+    name: 'system-architecture', title: 'Genesis System Architecture', width: 1500, height: 760,
     nodes: [
-      { id: 'ma-request', role: 'ui', x: 35, y: 110, w: 205, h: 105, title: 'Generation request', body: ['Raw prompt + project ID', 'Authenticated owner'] },
-      { id: 'ma-guard', role: 'decision', x: 285, y: 100, w: 235, h: 125, title: 'Request guardrails', body: ['Generation lock', 'HighLevel connected', 'Persist user message'] },
-      { id: 'ma-planner', role: 'external', x: 570, y: 100, w: 240, h: 125, title: 'Structured planner', body: ['Classify intent', 'Feature contract', '0 or 4 briefs'] },
-      { id: 'ma-mode', role: 'decision', x: 865, y: 95, w: 185, h: 135, title: 'Mode?', body: ['single / variations'], shape: 'diamond' },
-      { id: 'ma-single', role: 'service', x: 1110, y: 105, w: 250, h: 115, title: 'Existing single path', body: ['1 generation unit', 'Stream code directly', 'Persist normal snapshot'] },
-      { id: 'ma-pool', role: 'service', x: 750, y: 330, w: 255, h: 125, title: 'Candidate worker pool', body: ['4 isolated requests', 'Concurrency = 2', 'All-settled failures'] },
-      { id: 'ma-memory', role: 'data', x: 1085, y: 330, w: 275, h: 125, title: 'Function memory', body: ['3 files + usage per app', 'No candidate code streamed', 'before ranking'] },
-      { id: 'ma-qualify', role: 'decision', x: 750, y: 545, w: 255, h: 130, title: 'Deterministic qualify', body: ['Hard safety/runtime gates', 'Soft evidence + score', 'Need at least 2 eligible'] },
-      { id: 'ma-grade', role: 'external', x: 1085, y: 545, w: 275, h: 130, title: 'Blinded AI grader', body: ['Independent 100-point rubric', 'Retry once', 'Deterministic fallback'] },
-      { id: 'ma-persist', role: 'data', x: 750, y: 755, w: 255, h: 95, title: 'Persist top two', body: ['Variation set + finalists', 'Discard other code'] },
-      { id: 'ma-stream', role: 'ui', x: 1085, y: 755, w: 275, h: 95, title: 'Comparison client', body: ['SSE metadata + 2 file sets', 'Direction A / Direction B'] },
-      { id: 'ma-control', role: 'decision', x: 35, y: 355, w: 595, h: 165, title: 'Cross-cutting controls', body: ['One abort signal: planner → workers → grader', '15s SSE heartbeat · truthful milestone events', 'Variation quota weight = 4 · function timeout = 540s', 'Project lock held for the entire batch'] },
-      { id: 'ma-unchanged', role: 'neutral', x: 35, y: 610, w: 595, h: 150, title: 'Key compatibility decision', body: ['Normal prompts still use the original streaming workflow', 'Active project files stay unchanged until the user selects', 'Fewer than 2 eligible candidates persists no variation', 'Selection later creates a normal project snapshot'] },
+      { id: 'browser', role: 'ui', x: 40, y: 100, w: 220, h: 150, title: 'Vue SPA (browser)', body: ['WorkspaceShell.vue', 'Firebase Auth SDK'] },
+      { id: 'hosting', role: 'service', x: 300, y: 100, w: 220, h: 150, title: 'Firebase Hosting', body: ['Serves frontend/dist', 'Rewrites /api/v1/** and', 'named-function aliases'] },
+      { id: 'apiv1', role: 'service', x: 560, y: 90, w: 230, h: 160, title: 'apiV1 façade', body: ['Cloud Functions v2', 'onRequest handlers', 'region: us-central1'] },
+      { id: 'guards', role: 'decision', x: 830, y: 90, w: 240, h: 160, title: 'Shared guardrails', body: ['Firebase ID token', 'CORS allowlist (APP_ORIGINS)', 'owner + schema checks', 'rate limits'] },
+      { id: 'cicd', role: 'neutral', x: 1110, y: 90, w: 350, h: 160, title: 'GitHub Actions CI/CD', body: ['Build + test on every PR', 'Workload Identity Fed deploy', 'on push to main', 'post-deploy /api/healthz check'] },
+      { id: 'generation', role: 'service', x: 40, y: 320, w: 230, h: 160, title: 'Generation functions', body: ['generateApp (SSE)', 'cancelGeneration', 'projectVariationSet · selectVariation'] },
+      { id: 'projects', role: 'service', x: 310, y: 320, w: 230, h: 160, title: 'Project state functions', body: ['saveFiles', 'projectSnapshots · restoreSnapshot', 'projectState'] },
+      { id: 'integrations', role: 'service', x: 580, y: 320, w: 260, h: 160, title: 'Integration functions', body: ['hlOAuthStart · hlAuthCallback', 'hlConnectionStatus', 'hlProxy · hlWebhook'] },
+      { id: 'firestore', role: 'data', x: 880, y: 320, w: 260, h: 160, title: 'Firestore', body: ['projects · files · messages', 'snapshots · variationSets', 'connections · rate limits'] },
+      { id: 'config', role: 'data', x: 1180, y: 320, w: 280, h: 160, title: 'Runtime configuration', body: ['defineString params (models,', 'HL client), Secret Manager:', 'OPENAI_API_KEY, HL_CLIENT_SECRET'] },
+      { id: 'openai', role: 'external', x: 300, y: 570, w: 260, h: 130, title: 'OpenAI', body: ['gpt-5.4 generation model', 'variation planner + grader models'] },
+      { id: 'highlevel', role: 'external', x: 880, y: 570, w: 260, h: 130, title: 'HighLevel CRM', body: ['OAuth 2.0 · REST API', 'Ed25519-signed webhooks'] },
     ],
     edges: [
-      { id: 'ma-e1', start: [240, 162], end: [285, 162] }, { id: 'ma-e2', start: [520, 162], end: [570, 162] },
-      { id: 'ma-e3', start: [810, 162], end: [865, 162] }, { id: 'ma-e4', start: [1050, 155], end: [1110, 155], label: 'single' },
-      { id: 'ma-e5', role: 'service', start: [955, 230], end: [880, 330], label: 'variations' },
-      { id: 'ma-e6', start: [1005, 392], end: [1085, 392], label: '4 results' },
-      { id: 'ma-e7', start: [1190, 455], end: [1005, 610], label: 'validate' },
-      { id: 'ma-e8', start: [1005, 610], end: [1085, 610], label: 'eligible' },
-      { id: 'ma-e9', start: [1195, 675], end: [1005, 800], label: 'rank top 2' },
-      { id: 'ma-e10', start: [1005, 802], end: [1085, 802], label: 'after commit' },
+      { id: 'sa-e1', start: [260, 175], end: [300, 175], label: 'HTTPS' },
+      { id: 'sa-e2', start: [520, 175], end: [560, 170], label: 'rewrite' },
+      { id: 'sa-e3', start: [790, 170], end: [830, 170], label: 'every request' },
+      { id: 'sa-e4', start: [1075, 170], end: [1110, 170] },
+      { id: 'sa-e5', start: [1285, 250], end: [1285, 320], label: 'firebase deploy' },
+      { id: 'sa-e6', start: [675, 250], end: [200, 320], label: 'generate' },
+      { id: 'sa-e7', start: [710, 250], end: [400, 320], label: 'save/restore' },
+      { id: 'sa-e8', start: [900, 250], end: [700, 320], label: 'oauth/proxy' },
+      { id: 'sa-e10', role: 'external', start: [155, 480], end: [430, 570], label: 'generate/grade' },
+      { id: 'sa-e11', role: 'external', start: [900, 480], end: [980, 570], label: 'OAuth/API/webhooks' },
+      { id: 'sa-e12', start: [425, 400], end: [980, 400], label: 'read/write' },
+      { id: 'sa-e13', start: [810, 480], end: [1010, 400], label: 'connections' },
     ],
   },
   {
-    name: 'multi-prompt-generation-briefs', title: 'Multi-Prompt System — From One Request to Four Briefs', width: 1400, height: 900,
+    name: 'generation-and-grading-pipeline', title: 'Generation & Multi-Variation Grading Pipeline', width: 1650, height: 1020,
     nodes: [
-      { id: 'mp-user', role: 'ui', x: 35, y: 115, w: 225, h: 115, title: 'Raw user prompt', body: ['The product to build', 'May ask for alternatives', 'Treated as untrusted data'] },
-      { id: 'mp-context', role: 'data', x: 35, y: 300, w: 225, h: 120, title: 'Bounded context', body: ['Project metadata', 'Last 12 messages', 'Current file names only'] },
-      { id: 'mp-planner-prompt', role: 'external', x: 330, y: 150, w: 285, h: 165, title: 'Planner prompt (new)', body: ['Detect whole-app variation intent', 'Extract one shared contract', 'Require exactly 4 briefs', 'Confidence threshold = 0.8'] },
-      { id: 'mp-plan', role: 'data', x: 685, y: 105, w: 285, h: 205, title: 'Structured GenerationPlan', body: ['mode + confidence', 'required / optional / invariants', '4 briefs for variation mode', 'Schema-bounded output'] },
-      { id: 'mp-fallback', role: 'decision', x: 1035, y: 120, w: 300, h: 175, title: 'Safe planner fallback', body: ['Failure or invalid JSON → single', 'Low variation confidence → single', 'Cancellation still stops everything', 'Ordinary generation is never blocked'] },
-      { id: 'mp-contract', role: 'data', x: 35, y: 550, w: 245, h: 150, title: 'Shared feature contract', body: ['Same capabilities in all 4', 'HighLevel + safety invariants', 'Prevents feature drift'] },
-      { id: 'mp-briefs', role: 'service', x: 340, y: 505, w: 310, h: 235, title: 'Four generation briefs', body: ['Design intent', 'Information architecture', 'Interaction model', 'Visual direction + density', '≥3 pairwise differences', 'No candidate is described as “best”'] },
-      { id: 'mp-system', role: 'decision', x: 720, y: 465, w: 285, h: 180, title: 'Base systemPrompt', body: ['Existing shared generator policy', 'Vue 3-file runtime', 'HighLevel data contracts', 'Security + accessible dark UI', 'Same for every candidate'] },
-      { id: 'mp-directive', role: 'service', x: 720, y: 690, w: 285, h: 165, title: 'Candidate directive (new)', body: ['Contract + exactly 1 brief', 'Appended after raw request', 'May shape presentation only', 'Cannot remove required features'] },
-      { id: 'mp-candidates', role: 'external', x: 1080, y: 500, w: 280, h: 220, title: '4 isolated model calls', body: ['Same model + reasoning effort', 'Same current files + context', 'Candidates never see each other', 'Independent sampling', 'Strict 3-file JSON schema'] },
-      { id: 'mp-boundary', role: 'neutral', x: 1035, y: 780, w: 325, h: 85, title: 'Separation of concerns', body: ['Policy stays global; briefs create diversity', 'The grader never receives the briefs'] },
+      { id: 'gp-prompt', role: 'ui', x: 40, y: 100, w: 220, h: 150, title: 'User prompt', body: ['Raw request + chat history', 'generateApp (SSE)'] },
+      { id: 'gp-planner', role: 'external', x: 300, y: 90, w: 260, h: 170, title: 'Structured planner', body: ['Classify single vs variations', 'Derive shared feature contract', 'Confidence floor 0.8'] },
+      { id: 'gp-mode', role: 'decision', x: 600, y: 85, w: 180, h: 180, title: 'Mode?', body: ['single / variations'], shape: 'diamond' },
+      { id: 'gp-single', role: 'service', x: 830, y: 100, w: 260, h: 150, title: 'Single-generation path', body: ['Stream one app directly', 'Persist a normal snapshot'] },
+      { id: 'gp-briefs', role: 'data', x: 300, y: 340, w: 260, h: 160, title: '4 variation briefs', body: ['One shared feature contract', '≥3 differentiators each', 'No brief is called "best"'] },
+      { id: 'gp-pool', role: 'service', x: 600, y: 340, w: 280, h: 160, title: 'Candidate worker pool', body: ['4 parallel model calls', 'concurrency = 4 (fully parallel)', 'independent, isolated calls'] },
+      { id: 'gp-memory', role: 'data', x: 940, y: 340, w: 260, h: 160, title: 'In-memory candidates', body: ['3 files + usage each', 'Nothing streamed before ranking'] },
+      { id: 'gp-qualify', role: 'decision', x: 300, y: 580, w: 260, h: 190, title: 'Deterministic qualify', body: ['Hard: schema, forbidden APIs,', 'Vue runtime, app.js parses', 'Soft: HL contracts, states,', 'a11y, responsive scoring'] },
+      { id: 'gp-grade', role: 'external', x: 600, y: 580, w: 300, h: 190, title: 'Blinded rubric grading', body: ['Shuffle + alias candidates', 'Fidelity 30 · correctness 25', 'robustness 15 · usability 10', 'a11y 10 · responsive 5 · maint. 5'] },
+      { id: 'gp-rank', role: 'service', x: 940, y: 580, w: 260, h: 190, title: 'Deterministic ranking', body: ['Total score → fidelity →', 'correctness → alias tiebreak', 'No pairwise comparison pass'] },
+      { id: 'gp-abort', danger: true, x: 1240, y: 580, w: 230, h: 190, title: '< 2 eligible: stop safely', body: ['Persist nothing', 'Project stays unchanged'] },
+      { id: 'gp-persist', role: 'data', x: 300, y: 820, w: 280, h: 160, title: 'Persist top 2 finalists', body: ['variationSets/{id} + 2', 'candidate docs; other 2', 'candidates are discarded'] },
+      { id: 'gp-compare', role: 'ui', x: 630, y: 820, w: 260, h: 160, title: 'Comparison UI', body: ['VariationComparison.vue', 'Direction A / B sandboxed iframes'] },
+      { id: 'gp-select', role: 'service', x: 940, y: 820, w: 260, h: 160, title: 'User selects a finalist', body: ['selectVariationFinalist', 'checks base snapshot still current'] },
+      { id: 'gp-promote', role: 'data', x: 1240, y: 820, w: 230, h: 160, title: 'Promote to active', body: ['New snapshot · replace files/', 'clear pendingVariationSetId'] },
     ],
     edges: [
-      { id: 'mp-e1', start: [260, 170], end: [330, 205] }, { id: 'mp-e2', start: [260, 355], end: [330, 260] },
-      { id: 'mp-e3', start: [615, 220], end: [685, 205] }, { id: 'mp-e4', start: [970, 205], end: [1035, 205], label: 'guard' },
-      { id: 'mp-e5', role: 'data', start: [785, 310], end: [180, 550], label: 'contract' },
-      { id: 'mp-e6', role: 'service', start: [850, 310], end: [500, 505], label: '4 briefs' },
-      { id: 'mp-e7', start: [280, 625], end: [720, 750], label: 'shared' },
-      { id: 'mp-e8', start: [650, 620], end: [720, 770], label: 'one each' },
-      { id: 'mp-e9', start: [1005, 555], end: [1080, 580], label: 'instructions' },
-      { id: 'mp-e10', start: [1005, 770], end: [1080, 655], label: 'input suffix' },
+      { id: 'gp-e1', start: [260, 175], end: [300, 175] },
+      { id: 'gp-e2', start: [560, 175], end: [600, 175] },
+      { id: 'gp-e3', start: [780, 175], end: [830, 175], label: 'single' },
+      { id: 'gp-e4', role: 'service', start: [690, 265], end: [430, 340], label: 'variations' },
+      { id: 'gp-e5', start: [560, 420], end: [600, 420], label: '4 briefs' },
+      { id: 'gp-e6', start: [880, 420], end: [940, 420], label: '4 results' },
+      { id: 'gp-e7', start: [1070, 500], end: [430, 580], label: 'validate' },
+      { id: 'gp-e8', start: [560, 675], end: [600, 675], label: '≥2 eligible' },
+      { id: 'gp-e9', danger: true, start: [560, 720], end: [1240, 675], label: '< 2 eligible' },
+      { id: 'gp-e10', start: [900, 675], end: [940, 675], label: 'scores' },
+      { id: 'gp-e11', role: 'data', start: [1070, 770], end: [430, 820], label: 'top 2' },
+      { id: 'gp-e12', start: [580, 900], end: [630, 900] },
+      { id: 'gp-e13', start: [890, 900], end: [940, 900] },
+      { id: 'gp-e14', start: [1200, 900], end: [1240, 900] },
     ],
   },
   {
-    name: 'variation-grading-algorithm', title: 'Variation Qualification and Grading — Implemented Algorithm', width: 1400, height: 920,
+    name: 'data-lifecycle-and-highlevel-integration', title: 'Data Model, Lifecycle & HighLevel Integration', width: 1650, height: 940,
     nodes: [
-      { id: 'vg-four', role: 'service', x: 35, y: 110, w: 220, h: 115, title: 'Completed candidates', body: ['Up to 4 applications', 'Each has exactly 3 files'] },
-      { id: 'vg-hard', role: 'decision', x: 315, y: 90, w: 280, h: 155, title: 'Hard qualification gates', body: ['Schema + file limits', 'Forbidden APIs / secrets', 'Mandatory Vue runtime', 'app.js parses'] },
-      { id: 'vg-soft', role: 'decision', x: 655, y: 90, w: 295, h: 155, title: 'Soft deterministic checks', body: ['HighLevel contracts 25', 'States 20 · features 30', 'Accessibility 15', 'Responsive CSS 10'] },
-      { id: 'vg-count', role: 'decision', x: 1015, y: 95, w: 180, h: 145, title: '≥2 eligible?', shape: 'diamond' },
-      { id: 'vg-fail', danger: true, x: 1225, y: 110, w: 150, h: 115, title: 'Stop safely', body: ['Persist nothing', 'Project unchanged'] },
-      { id: 'vg-blind', role: 'decision', x: 315, y: 355, w: 280, h: 180, title: 'Blind the candidates', body: ['Shuffle candidate order', 'Assign random UUID aliases', 'Remove brief + original index', 'Remove model + display position'] },
-      { id: 'vg-input', role: 'data', x: 35, y: 370, w: 220, h: 155, title: 'Grader input', body: ['Raw user request', 'Shared feature contract', 'Deterministic evidence', 'Alias + source files'] },
-      { id: 'vg-rubric', role: 'external', x: 655, y: 335, w: 310, h: 220, title: 'Independent rubric call', body: ['Feature fidelity 30', 'Functional correctness 25', 'Robustness 15', 'Usability 10 · accessibility 10', 'Responsive 5 · maintainable 5'] },
-      { id: 'vg-rank', role: 'service', x: 1025, y: 350, w: 300, h: 190, title: 'Deterministic rank logic', body: ['1. Total rubric score', '2. Feature fidelity', '3. Functional correctness', '4. Opaque alias', 'No second model or pairwise pass'] },
-      { id: 'vg-retry', role: 'decision', x: 655, y: 690, w: 260, h: 145, title: 'Grader succeeds?', body: ['Maximum 2 attempts'], shape: 'diamond' },
-      { id: 'vg-fallback', role: 'service', x: 315, y: 700, w: 270, h: 130, title: 'Deterministic fallback', body: ['Rank by soft score', 'Tie: candidate ID', 'gradingMode = fallback'] },
-      { id: 'vg-top', role: 'data', x: 1025, y: 690, w: 300, h: 150, title: 'Top two finalists', body: ['Persist files + score breakdown', 'Expose “standout” summary', 'Hide numeric scores in UI', 'Stable A/B display ≠ rank'] },
-      { id: 'vg-note', role: 'neutral', x: 35, y: 610, w: 220, h: 175, title: 'Design vs implementation', body: ['Earlier spec proposed a', '70/30 rubric + pairwise blend.', 'Current code intentionally uses', 'rubric-only ranking.'] },
+      { id: 'dl-collections', role: 'data', x: 40, y: 100, w: 300, h: 190, title: 'Firestore collections', body: ['projects · files · messages', 'snapshots · variationSets/candidates', 'highlevelConnections · oauthStates', 'rateLimits · webhookDedupe · hlEvents'] },
+      { id: 'dl-isolation', role: 'decision', x: 380, y: 100, w: 220, h: 190, title: 'Ownership isolation', body: ['requireOwnedProject(uid, id)', 'enforced in Functions', 'and mirrored in Firestore rules'] },
+      { id: 'dl-live', role: 'data', x: 640, y: 100, w: 210, h: 190, title: 'Live files', body: ['files/ subcollection', 'used by editor + preview'] },
+      { id: 'dl-snapshots', role: 'data', x: 890, y: 100, w: 250, h: 190, title: 'Append-only snapshots', body: ['kind: generation · manual', 'partial · backup'] },
+      { id: 'dl-restore', role: 'service', x: 1180, y: 100, w: 260, h: 190, title: 'Restore', body: ['Back up current files first,', 'then overwrite live files,', 'update latestSnapshotId'] },
+      { id: 'dl-connect', role: 'ui', x: 40, y: 350, w: 220, h: 170, title: 'Connect HighLevel', body: ['hlOAuthStart', 'oauthStates doc, 10 min TTL'] },
+      { id: 'dl-callback', role: 'service', x: 300, y: 350, w: 250, h: 170, title: 'hlAuthCallback', body: ['exchange code for tokens', 'backfill locationId on projects'] },
+      { id: 'dl-connections', role: 'data', x: 590, y: 350, w: 260, h: 170, title: 'highlevelConnections/{uid}', body: ['access/refresh tokens', 'expiresAt · locationId'] },
+      { id: 'dl-refresh', role: 'service', x: 890, y: 350, w: 280, h: 170, title: 'Lazy refresh + lease', body: ['refreshes when <60s to expiry', '30s Firestore lease', 'rotates both tokens'] },
+      { id: 'dl-iframe', role: 'ui', x: 40, y: 590, w: 220, h: 190, title: 'Generated app iframe', body: ['window.genesis.highlevel', 'bridge, no direct network'] },
+      { id: 'dl-proxy', role: 'service', x: 300, y: 590, w: 280, h: 190, title: 'hlProxy', body: ['auth · 60/min rate limit', '8-operation allowlist', 'injects locationId server-side'] },
+      { id: 'dl-hlapi', role: 'external', x: 620, y: 590, w: 220, h: 190, title: 'HighLevel API', body: ['contacts · conversations', 'calendars · appointments'] },
+      { id: 'dl-webhook', role: 'service', x: 880, y: 590, w: 280, h: 190, title: 'hlWebhook', body: ['Ed25519 signature verify', 'webhookDedupe atomic claim', 'maps locationId → uid'] },
+      { id: 'dl-events', role: 'data', x: 1200, y: 590, w: 260, h: 190, title: 'users/{uid}/hlEvents', body: ['Contact/Message/Appointment', 'events relayed live to the iframe', 'UNINSTALL deletes the connection'] },
     ],
     edges: [
-      { id: 'vg-e1', start: [255, 165], end: [315, 165] }, { id: 'vg-e2', start: [595, 165], end: [655, 165] },
-      { id: 'vg-e3', start: [950, 165], end: [1015, 165] }, { id: 'vg-e4', start: [1195, 165], end: [1225, 165], label: 'no', danger: true },
-      { id: 'vg-e5', role: 'data', start: [1105, 240], end: [520, 355], label: 'yes' },
-      { id: 'vg-e6', start: [255, 445], end: [315, 445] }, { id: 'vg-e7', start: [595, 445], end: [655, 445] },
-      { id: 'vg-e8', start: [805, 555], end: [785, 690], label: 'result' },
-      { id: 'vg-e10', start: [655, 762], end: [585, 762], label: 'no after retry' },
-      { id: 'vg-e11', role: 'data', start: [915, 735], end: [1025, 470], label: 'yes · rank' },
-      { id: 'vg-e12', start: [585, 800], end: [1025, 805], label: 'top 2' },
-      { id: 'vg-e13', role: 'data', start: [1175, 540], end: [1175, 690], label: 'top 2' },
-    ],
-  },
-  {
-    name: 'multi-app-lifecycle-data-boundaries', title: 'Multi-App Preview — Lifecycle and Data Boundaries', width: 1400, height: 900,
-    nodes: [
-      { id: 'ml-active', role: 'data', x: 35, y: 110, w: 240, h: 130, title: 'Active project state', body: ['Current files + latestSnapshotId', 'Never mutated during generation'] },
-      { id: 'ml-lock', role: 'decision', x: 330, y: 105, w: 245, h: 140, title: 'Batch ownership', body: ['One project lock', 'One generationId', 'One abort-controller tree'] },
-      { id: 'ml-run', role: 'service', x: 640, y: 95, w: 280, h: 160, title: 'In-memory batch', body: ['4 candidates · concurrency 2', 'Progress milestones only', 'Failures do not cancel siblings', 'Cancellation stops all stages'] },
-      { id: 'ml-rank', role: 'service', x: 985, y: 105, w: 260, h: 140, title: 'Validate + rank', body: ['All viable code remains server-side', 'Select internal ranks 1 and 2'] },
-      { id: 'ml-discard', danger: true, x: 1100, y: 355, w: 255, h: 120, title: 'Discarded candidates', body: ['Code never persisted', 'Code never sent to browser'] },
-      { id: 'ml-store', role: 'data', x: 700, y: 345, w: 325, h: 155, title: 'Atomic finalist persistence', body: ['variationSets/{setId}', 'Exactly 2 candidate documents', 'pendingVariationSetId pointer', 'Aggregate usage + grading mode'] },
-      { id: 'ml-sse', role: 'ui', x: 330, y: 350, w: 300, h: 145, title: 'SSE finalist transfer', body: ['Metadata only after persistence', 'Chunked files + SHA-256', '2 isolated buffers', 'Reload can fetch persisted set'] },
-      { id: 'ml-preview', role: 'ui', x: 35, y: 350, w: 235, h: 145, title: 'Comparison workspace', body: ['Two sandboxed previews', 'Direction A / Direction B', 'No active editor mutation'] },
-      { id: 'ml-choice', role: 'ui', x: 35, y: 660, w: 235, h: 125, title: 'User chooses', body: ['POST selection', 'Candidate ID only'] },
-      { id: 'ml-conflict', role: 'decision', x: 330, y: 640, w: 280, h: 165, title: 'Selection checks', body: ['Owner + finalist membership', 'Set is ready', 'Base snapshot still current', 'Idempotent if already active'] },
-      { id: 'ml-promote', role: 'service', x: 685, y: 635, w: 300, h: 175, title: 'Atomic promotion', body: ['Create standard snapshot', 'Replace active file documents', 'Update latestSnapshotId', 'Clear pending pointer', 'Persist assistant summary'] },
-      { id: 'ml-history', role: 'data', x: 1060, y: 650, w: 295, h: 145, title: 'Recoverable history', body: ['Chosen finalist becomes active', 'Other finalist remains available', 'Later switch creates another snapshot'] },
-      { id: 'ml-events', role: 'neutral', x: 1010, y: 520, w: 345, h: 85, title: 'Operational visibility', body: ['SSE events are factual, not estimated percentages', '15-second heartbeat keeps long requests observable'] },
-    ],
-    edges: [
-      { id: 'ml-e1', start: [275, 175], end: [330, 175] }, { id: 'ml-e2', start: [575, 175], end: [640, 175] },
-      { id: 'ml-e3', start: [920, 175], end: [985, 175] }, { id: 'ml-e4', danger: true, start: [1150, 245], end: [1225, 355], label: 'bottom 2' },
-      { id: 'ml-e5', role: 'data', start: [1050, 245], end: [900, 345], label: 'top 2' },
-      { id: 'ml-e6', start: [700, 420], end: [630, 420], label: 'after commit' },
-      { id: 'ml-e7', start: [330, 420], end: [270, 420] }, { id: 'ml-e8', start: [152, 495], end: [152, 660] },
-      { id: 'ml-e9', start: [270, 722], end: [330, 722] }, { id: 'ml-e10', start: [610, 722], end: [685, 722] },
-      { id: 'ml-e11', start: [985, 722], end: [1060, 722] },
-      { id: 'ml-e12', role: 'data', start: [835, 635], end: [200, 240], label: 'commit active files' },
-    ],
-  },
-  {
-    name: 'backend-capability-map', title: 'Backend Capability Map', width: 1200, height: 690,
-    nodes: [
-      { id: 'entry', role: 'ui', x: 40, y: 115, w: 220, h: 105, title: 'HTTPS entry', body: ['Hosting /api/v1 routes', 'Cloud Functions'] },
-      { id: 'generation', role: 'service', x: 330, y: 95, w: 230, h: 105, title: 'Generation', body: ['generate · cancel', 'stream SSE'] },
-      { id: 'projects', role: 'data', x: 625, y: 95, w: 230, h: 105, title: 'Project state', body: ['load · save · history', 'restore snapshots'] },
-      { id: 'integration', role: 'service', x: 920, y: 95, w: 230, h: 105, title: 'Integrations', body: ['OAuth start/callback', 'connection status'] },
-      { id: 'guards', role: 'decision', x: 40, y: 300, w: 285, h: 135, title: 'Shared guardrails', body: ['Firebase identity · CORS', 'owner checks · schemas', 'rate limits · generation lock'] },
-      { id: 'proxy', role: 'service', x: 405, y: 300, w: 245, h: 115, title: 'HighLevel proxy', body: ['allowlisted CRM calls', 'validated parameters'] },
-      { id: 'webhooks', role: 'service', x: 735, y: 300, w: 245, h: 115, title: 'Webhook intake', body: ['signature · dedupe', 'event fanout'] },
-      { id: 'firestore', role: 'data', x: 190, y: 535, w: 255, h: 110, title: 'Firestore', body: ['projects · files · messages', 'snapshots · connections · events'] },
-      { id: 'openai', role: 'external', x: 500, y: 535, w: 220, h: 110, title: 'OpenAI', body: ['structured generation stream'] },
-      { id: 'highlevel', role: 'external', x: 790, y: 535, w: 255, h: 110, title: 'HighLevel', body: ['OAuth · CRM APIs · webhooks'] },
-    ],
-    edges: [
-      { id: 'e1', start: [260, 155], end: [330, 145] }, { id: 'e2', start: [260, 165], end: [625, 145] },
-      { id: 'e3', start: [260, 175], end: [920, 145] }, { id: 'e4', start: [200, 220], end: [180, 300], label: 'every request' },
-      { id: 'e5', start: [260, 195], end: [405, 350] }, { id: 'e6', start: [260, 205], end: [735, 350] },
-      { id: 'e7', start: [610, 415], end: [350, 535], label: 'state' }, { id: 'e8', start: [445, 200], end: [610, 535], label: 'model' },
-      { id: 'e9', start: [1010, 200], end: [925, 535], label: 'OAuth' }, { id: 'e10', start: [650, 355], end: [850, 535], label: 'API' },
-      { id: 'e11', start: [930, 535], end: [855, 415], label: 'events' },
-    ],
-  },
-  {
-    name: 'oauth-token-lifecycle', title: 'HighLevel Connection and Token Lifecycle', width: 1200, height: 735,
-    nodes: [
-      { id: 'connect', role: 'ui', x: 40, y: 110, w: 200, h: 90, title: 'Connect HighLevel', body: ['Signed-in user clicks'] },
-      { id: 'state', role: 'decision', x: 285, y: 105, w: 220, h: 100, title: 'Create OAuth state', body: ['Bind state to user', 'Expires after 10 minutes'] },
-      { id: 'consent', role: 'external', x: 550, y: 105, w: 220, h: 100, title: 'HighLevel consent', body: ['Choose one location', 'Approve scopes'] },
-      { id: 'callback', role: 'decision', x: 815, y: 105, w: 245, h: 100, title: 'Validate callback', body: ['Consume one-time state', 'Receive authorization code'] },
-      { id: 'exchange', role: 'service', x: 815, y: 285, w: 245, h: 105, title: 'Exchange code', body: ['Use server-side secret', 'Fetch location name'] },
-      { id: 'store', role: 'data', x: 550, y: 285, w: 220, h: 105, title: 'Store connection', body: ['Access + refresh tokens', 'Location ID + expiry'] },
-      { id: 'ready', role: 'data', x: 285, y: 285, w: 220, h: 105, title: 'Connection ready', body: ['Projects receive location ID', 'Dashboard shows name'] },
-      { id: 'later', role: 'ui', x: 40, y: 520, w: 220, h: 100, title: 'Later API request', body: ['Load server-side connection'] },
-      { id: 'expiry', role: 'decision', x: 330, y: 500, w: 175, h: 130, title: 'Expires soon?', body: ['Within 60 seconds'], shape: 'diamond' },
-      { id: 'current', role: 'service', x: 575, y: 480, w: 220, h: 95, title: 'Use current token', body: ['No refresh needed'] },
-      { id: 'refresh', role: 'service', x: 575, y: 610, w: 235, h: 95, title: 'Refresh safely', body: ['Claim 30-second lease', 'Rotate both tokens'] },
-      { id: 'call', role: 'external', x: 900, y: 520, w: 235, h: 105, title: 'Call HighLevel API', body: ['Credentials stay server-side'] },
-    ],
-    edges: [
-      { id: 'o1', start: [240, 155], end: [285, 155] }, { id: 'o2', start: [505, 155], end: [550, 155] },
-      { id: 'o3', start: [770, 155], end: [815, 155] }, { id: 'o4', start: [938, 205], end: [938, 285] },
-      { id: 'o5', start: [815, 338], end: [770, 338] }, { id: 'o6', start: [550, 338], end: [505, 338] },
-      { id: 'o7', start: [260, 570], end: [330, 565] }, { id: 'o8', start: [505, 540], end: [575, 525], label: 'no' },
-      { id: 'o9', start: [430, 630], end: [575, 657], label: 'yes' }, { id: 'o10', start: [795, 525], end: [900, 565] },
-      { id: 'o11', start: [810, 657], end: [1015, 625] },
-    ],
-  },
-  {
-    name: 'highlevel-proxy-flow', title: 'Generated App to Real HighLevel Data', width: 1200, height: 690,
-    nodes: [
-      { id: 'action', role: 'ui', x: 40, y: 120, w: 220, h: 115, title: 'User action', body: ['Search contacts', 'Load appointments', 'Send a message'] },
-      { id: 'iframe', role: 'ui', x: 315, y: 120, w: 220, h: 115, title: 'Generated iframe', body: ['Calls only', 'window.genesis.highlevel'] },
-      { id: 'host', role: 'service', x: 590, y: 120, w: 235, h: 125, title: 'Host bridge', body: ['Check message source', 'Check operation name', 'Attach Firebase ID token'] },
-      { id: 'function', role: 'service', x: 850, y: 120, w: 300, h: 125, title: 'Versioned proxy route', body: ['POST /api/v1/integrations/highlevel', '/proxy-requests · 60/min', 'Authenticate · validate'] },
-      { id: 'allowlist', role: 'decision', x: 880, y: 340, w: 245, h: 110, title: 'Operation allowlist', body: ['Contacts · conversations', 'Calendars · appointments'] },
-      { id: 'token', role: 'data', x: 590, y: 340, w: 235, h: 110, title: 'Connection resolver', body: ['Load or refresh token', 'Inject user location ID'] },
-      { id: 'api', role: 'external', x: 315, y: 340, w: 220, h: 110, title: 'HighLevel API', body: ['Execute one approved call'] },
-      { id: 'result', role: 'ui', x: 40, y: 340, w: 220, h: 110, title: 'Preview result', body: ['Render real CRM data', 'or a visible error'] },
-      { id: 'boundary', role: 'decision', x: 330, y: 555, w: 555, h: 90, title: 'Trust boundary', body: ['No direct network · no OAuth tokens · no arbitrary endpoints · no demo fallback'] },
-    ],
-    edges: [
-      { id: 'p1', start: [260, 177], end: [315, 177] }, { id: 'p2', start: [535, 177], end: [590, 177], label: 'postMessage' },
-      { id: 'p3', start: [825, 182], end: [850, 182], label: 'HTTPS' }, { id: 'p4', start: [1000, 245], end: [1000, 340] },
-      { id: 'p5', start: [880, 395], end: [825, 395] }, { id: 'p6', start: [590, 395], end: [535, 395] },
-      { id: 'p7', start: [315, 395], end: [260, 395], label: 'JSON result' },
-    ],
-  },
-  {
-    name: 'snapshot-restore-flow', title: 'Files, Snapshots, and Restore', width: 1200, height: 690,
-    nodes: [
-      { id: 'generation', role: 'service', x: 40, y: 110, w: 235, h: 105, title: 'Generation completes', body: ['Files + assistant summary'] },
-      { id: 'manual', role: 'ui', x: 40, y: 315, w: 235, h: 105, title: 'User saves an edit', body: ['Complete current file set'] },
-      { id: 'current', role: 'data', x: 425, y: 255, w: 300, h: 135, title: 'Current project files', body: ['index.html · styles.css · app.js', 'Used by editor and preview'] },
-      { id: 'history', role: 'data', x: 855, y: 125, w: 260, h: 135, title: 'Append-only history', body: ['Generation snapshots', 'Manual-edit snapshots', 'Partial snapshots'] },
-      { id: 'choose', role: 'ui', x: 855, y: 355, w: 260, h: 105, title: 'Choose Restore', body: ['Load selected snapshot'] },
-      { id: 'backup', role: 'data', x: 540, y: 535, w: 260, h: 105, title: 'Safety backup', body: ['Capture current files first'] },
-      { id: 'replace', role: 'service', x: 185, y: 535, w: 270, h: 105, title: 'Restore atomically', body: ['Replace current files', 'Update latest snapshot pointer'] },
-    ],
-    edges: [
-      { id: 's1', start: [275, 160], end: [425, 285], label: 'commit' }, { id: 's2', start: [275, 367], end: [425, 345], label: 'save' },
-      { id: 's3', start: [725, 300], end: [855, 195], label: 'append snapshot' }, { id: 's4', start: [985, 260], end: [985, 355], label: 'history UI' },
-      { id: 's5', start: [855, 405], end: [800, 585] }, { id: 's6', start: [540, 585], end: [455, 585] },
-      { id: 's7', start: [320, 535], end: [500, 390], label: 'refresh state' },
-    ],
-  },
-  {
-    name: 'webhook-event-flow', title: 'HighLevel Webhook Intake', width: 1200, height: 660,
-    nodes: [
-      { id: 'event', role: 'external', x: 40, y: 115, w: 215, h: 100, title: 'HighLevel event', body: ['Contact · message', 'Appointment · uninstall'] },
-      { id: 'endpoint', role: 'service', x: 305, y: 115, w: 215, h: 100, title: 'hlWebhook', body: ['Parse event envelope'] },
-      { id: 'signature', role: 'decision', x: 575, y: 100, w: 170, h: 130, title: 'Valid signature?', body: ['Ed25519'], shape: 'diamond' },
-      { id: 'reject', x: 570, y: 305, w: 180, h: 85, title: 'Reject', body: ['Return 401'], danger: true },
-      { id: 'dedupe', role: 'data', x: 800, y: 115, w: 245, h: 105, title: 'Claim webhook ID', body: ['Atomic replay protection', '24-hour TTL'] },
-      { id: 'owner', role: 'decision', x: 800, y: 290, w: 245, h: 130, title: 'Route by location', body: ['Find connected owner'], shape: 'diamond' },
-      { id: 'uninstall', role: 'service', x: 40, y: 515, w: 235, h: 100, title: 'UNINSTALL', body: ['Delete stored connection'] },
-      { id: 'ignore', role: 'neutral', x: 320, y: 515, w: 235, h: 100, title: 'Other event', body: ['Acknowledge and ignore'] },
-      { id: 'store', role: 'data', x: 600, y: 515, w: 235, h: 100, title: 'Relevant event', body: ['Store in user hlEvents', '24-hour TTL'] },
-      { id: 'ui', role: 'ui', x: 880, y: 515, w: 250, h: 100, title: 'Live UI update', body: ['Workspace and Events page', 'listen through Firestore'] },
-    ],
-    edges: [
-      { id: 'w1', start: [255, 165], end: [305, 165] }, { id: 'w2', start: [520, 165], end: [575, 165] },
-      { id: 'w3', role: 'data', start: [745, 165], end: [800, 165], label: 'yes' }, { id: 'w4', start: [660, 230], end: [660, 305], label: 'no', danger: true },
-      { id: 'w5', start: [922, 220], end: [922, 290] }, { id: 'w6', start: [830, 420], end: [157, 515], label: 'uninstall' },
-      { id: 'w7', start: [885, 420], end: [437, 515], label: 'other' }, { id: 'w8', start: [970, 420], end: [717, 515], label: 'relevant' },
-      { id: 'w9', start: [835, 565], end: [880, 565] },
-    ],
-  },
-  {
-    name: 'deployment-runtime-flow', title: 'Build, Deploy, and Runtime Configuration', width: 1200, height: 680,
-    nodes: [
-      { id: 'developer', role: 'ui', x: 40, y: 115, w: 220, h: 100, title: 'Developer', body: ['Pull request or push', 'to main'] },
-      { id: 'ci', role: 'service', x: 315, y: 115, w: 220, h: 100, title: 'GitHub Actions', body: ['Install dependencies', 'Build · test'] },
-      { id: 'checks', role: 'decision', x: 600, y: 100, w: 175, h: 130, title: 'Checks pass?', shape: 'diamond' },
-      { id: 'stop', x: 598, y: 315, w: 180, h: 85, title: 'Stop', body: ['No deployment'], danger: true },
-      { id: 'identity', role: 'decision', x: 850, y: 115, w: 255, h: 105, title: 'Production identity', body: ['Short-lived Google access', 'through Workload Identity'] },
-      { id: 'firebase', role: 'service', x: 850, y: 330, w: 255, h: 120, title: 'Firebase deploy', body: ['Hosting · Functions', 'Rules + indexes'] },
-      { id: 'config', role: 'data', x: 470, y: 515, w: 275, h: 105, title: 'Runtime configuration', body: ['Secret Manager holds keys', 'Environment holds non-secrets'] },
-      { id: 'health', role: 'ui', x: 850, y: 525, w: 255, h: 105, title: 'Post-deploy checks', body: ['Open hosting URL', 'Verify /api/v1/health'] },
-      { id: 'local', role: 'neutral', x: 40, y: 430, w: 285, h: 130, title: 'Local development', body: ['Vite frontend', 'Firebase emulators', 'Real external integrations'] },
-    ],
-    edges: [
-      { id: 'd1', start: [260, 165], end: [315, 165] }, { id: 'd2', start: [535, 165], end: [600, 165] },
-      { id: 'd3', start: [688, 230], end: [688, 315], label: 'no', danger: true }, { id: 'd4', role: 'data', start: [775, 165], end: [850, 165], label: 'yes · push' },
-      { id: 'd5', start: [978, 220], end: [978, 330] }, { id: 'd6', start: [745, 565], end: [850, 400], label: 'runtime config' },
-      { id: 'd7', start: [978, 450], end: [978, 525] },
+      { id: 'dl-e1', start: [340, 195], end: [380, 195], label: 'every read/write' },
+      { id: 'dl-e2', start: [600, 195], end: [640, 195] },
+      { id: 'dl-e3', start: [850, 195], end: [890, 195], label: 'commit' },
+      { id: 'dl-e4', start: [1140, 195], end: [1180, 195], label: 'history UI' },
+      { id: 'dl-e5', start: [1310, 290], end: [745, 290], label: 'overwrite' },
+      { id: 'dl-e6', start: [260, 435], end: [300, 435], label: 'consent' },
+      { id: 'dl-e7', start: [550, 435], end: [590, 435] },
+      { id: 'dl-e8', start: [850, 435], end: [890, 435], label: 'resolve/rotate' },
+      { id: 'dl-e9', start: [260, 685], end: [300, 685], label: 'bridge call' },
+      { id: 'dl-e10', start: [580, 685], end: [620, 685], label: 'resolve token' },
+      { id: 'dl-e11', role: 'external', start: [500, 590], end: [720, 435], label: 'token' },
+      { id: 'dl-e12', start: [840, 685], end: [880, 685], label: '1 allowlisted call' },
+      { id: 'dl-e13', role: 'external', start: [730, 590], end: [1010, 685], label: 'async events' },
+      { id: 'dl-e14', start: [1160, 685], end: [1200, 685], label: 'relevant types' },
+      { id: 'dl-e15', role: 'data', start: [1250, 590], end: [260, 590], label: 'live relay' },
     ],
   },
 ]
 
-// Keep the established diagrams first so their generated Excalidraw seeds stay stable even when
-// this file gains new scenes near the top of the catalog.
-const newMultiAppDiagramNames = new Set([
-  'multi-app-backend-architecture',
-  'multi-prompt-generation-briefs',
-  'variation-grading-algorithm',
-  'multi-app-lifecycle-data-boundaries',
-])
-const generationOrder = [...diagrams].sort((left, right) => (
-  Number(newMultiAppDiagramNames.has(left.name)) - Number(newMultiAppDiagramNames.has(right.name))
-))
-for (const diagram of generationOrder) writeDiagram(diagram)
+for (const diagram of diagrams) writeDiagram(diagram)
 
-const standaloneRoles = {
-  'system-architecture': {
-    'user-browser': 'ui', sandbox: 'ui', hosting: 'service', auth: 'decision', functions: 'service',
-    firestore: 'data', secrets: 'decision', openai: 'external', highlevel: 'external',
-  },
-  'generation-flow': {
-    start: 'ui', guard: 'decision', control: 'decision', context: 'data', model: 'external',
-    parse: 'service', valid: 'decision', persist: 'data', render: 'ui', partial: 'danger', bridge: 'service',
-  },
-}
-
-function recolorSvgShape(svg, shape, style) {
-  let pattern
-  if (shape.type === 'rectangle') {
-    const prefix = `<rect x="${shape.x}" y="${shape.y}" width="${shape.width}" height="${shape.height}"`
-    const start = svg.indexOf(prefix)
-    if (start < 0) throw new Error(`Could not find ${shape.id} in its SVG`)
-    const end = svg.indexOf('/>', start) + 2
-    const original = svg.slice(start, end)
-    const updated = original
-      .replace(/fill="[^"]*"/, `fill="${style.fill}"`)
-      .replace(/stroke="[^"]*"/, `stroke="${style.stroke}"`)
-    return `${svg.slice(0, start)}${updated}${svg.slice(end)}`
-  }
-
-  pattern = /<polygon points="[^"]+" fill="[^"]*" stroke="[^"]*"[^>]*\/>/
-  if (!pattern.test(svg)) throw new Error(`Could not find ${shape.id} in its SVG`)
-  return svg.replace(pattern, (original) => original
-    .replace(/fill="[^"]*"/, `fill="${style.fill}"`)
-    .replace(/stroke="[^"]*"/, `stroke="${style.stroke}"`))
-}
-
-function recolorStandaloneDiagram(name, roleById) {
-  const sourcePath = resolve(out, `${name}.excalidraw`)
-  const svgPath = resolve(out, `${name}.svg`)
-  const source = JSON.parse(readFileSync(sourcePath, 'utf8'))
-  let svg = readFileSync(svgPath, 'utf8')
-
-  for (const element of source.elements) {
-    const role = roleById[element.id]
-    if (!role) continue
-    const style = colors[role]
-    element.strokeColor = style.stroke
-    element.backgroundColor = style.fill
-    svg = recolorSvgShape(svg, element, style)
-  }
-
-  writeFileSync(sourcePath, `${JSON.stringify(source, null, 2)}\n`)
-  writeFileSync(svgPath, svg)
-}
-
-for (const [name, roles] of Object.entries(standaloneRoles)) recolorStandaloneDiagram(name, roles)
-console.log(`Generated and color-coordinated ${diagrams.length + Object.keys(standaloneRoles).length} Excalidraw diagrams in ${out}`)
+console.log(`Generated ${diagrams.length} Excalidraw diagrams in ${out}`)
