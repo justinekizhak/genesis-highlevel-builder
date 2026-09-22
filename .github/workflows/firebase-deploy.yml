@@ -57,6 +57,17 @@ jobs:
         run: pnpm --dir frontend exec playwright install --with-deps chromium
 
       - name: Run UI smoke tests
+        env:
+          # The e2e specs mock every Firebase Auth and apiV1 network call, so these just need to be
+          # non-empty and consistent with the fake ID token's iss/aud (see frontend/e2e/public.spec.ts)
+          # so the app's `firebaseEnabled` check passes, the SDK initializes, and the workspace's
+          # Functions-backed UI (integrations status, generations, etc.) renders instead of the
+          # "Firebase Functions are not configured" placeholder.
+          VITE_FUNCTIONS_BASE_URL: http://127.0.0.1:5001/jk-ai-app-builder/us-central1
+          VITE_FIREBASE_API_KEY: e2e-test-api-key
+          VITE_FIREBASE_AUTH_DOMAIN: jk-ai-app-builder.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: jk-ai-app-builder
+          VITE_FIREBASE_APP_ID: 1:000000000000:web:0000000000000000000000
         run: pnpm run test:ui
 
   deploy:
