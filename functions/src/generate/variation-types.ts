@@ -130,7 +130,7 @@ export const rubricSchema = z.object({
   responsiveness: z.number().int().min(0).max(5),
   maintainability: z.number().int().min(0).max(5),
   standout: z.string().trim().min(1).max(220),
-  evidence: z.array(z.object({ path: evidencePathSchema, detail: z.string() })).max(12),
+  evidence: z.array(z.object({ path: evidencePathSchema, detail: z.string().max(200) })).max(6),
 }).strict()
 
 export type RubricScore = z.infer<typeof rubricSchema>
@@ -173,14 +173,14 @@ export const rubricJsonSchema = {
     },
     evidence: {
       type: 'array',
-      maxItems: 12,
+      maxItems: 6,
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['path', 'detail'],
         properties: {
           path: { type: 'string', enum: ['index.html', 'styles.css', 'app.js'] },
-          detail: { type: 'string', maxLength: 400 },
+          detail: { type: 'string', maxLength: 200 },
         },
       },
     },

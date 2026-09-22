@@ -44,7 +44,21 @@ HighLevel calls two separate inbound endpoints that are not part of the authenti
 
 ## Generation stream
 
-`POST /projects/{projectId}/generations` produces SSE. Events are JSON objects serialized in `data:` lines. The stream begins with `generation_started`, may contain `token`, `file_start`, `file_delta`, `file_complete`, `usage`, and `snapshot_created`, and ends with either `complete` or `error`. Lines beginning with `:` are transport heartbeats.
+`POST /projects/{projectId}/generations` produces SSE. Events are JSON objects serialized in `data:` lines.
+
+| Event | Purpose |
+|---|---|
+| `generation_started` | Identifies the generation and model. |
+| `token` | Streams the assistant summary. |
+| `file_start` | Announces the file path and editor language. |
+| `file_delta` | Appends source text for the active file. |
+| `file_complete` | Supplies final size and SHA-256 digest. |
+| `usage` | Reports token usage for the call. |
+| `snapshot_created` | Identifies the persisted point-in-time snapshot. |
+| `complete` | Closes a successful generation. |
+| `error` | Returns a code, user-facing message, and recovery status. |
+
+Lines beginning with `:` are comment-only transport heartbeats and never become application events.
 
 Firebase Hosting buffers rewritten streaming responses. In production, the client therefore sends only this request directly to `https://us-central1-jk-ai-app-builder.cloudfunctions.net/apiV1/v1/projects/{projectId}/generations`; all non-streaming v1 requests continue through the Hosting base URL above. Authentication and routing behavior are identical.
 
@@ -54,7 +68,7 @@ Clients must treat an EOF without a terminal event as an interrupted generation.
 
 A planning call classifies every request before generation begins. An ordinary request keeps the single stream above unchanged. A request that asks for alternatives — "create multiple variations", "show me a few directions", "give me different versions" — enters the variation branch, which is OpenAI-only.
 
-The variation branch generates exactly four candidates at a concurrency of two, qualifies and grades them while their code stays in function memory, persists exactly the top two, and streams only those two file sets. Discarded candidate code is never persisted and never reaches the client.
+The variation branch generates exactly four candidates fully in parallel (concurrency equal to the candidate count), qualifies and grades them while their code stays in function memory, persists exactly the top two, and streams only those two file sets. Discarded candidate code is never persisted and never reaches the client.
 
 ### Variant-aware stream events
 

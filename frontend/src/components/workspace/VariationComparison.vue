@@ -39,6 +39,9 @@ const props = defineProps<{
   bridgeEnabled?: boolean
   canCancel?: boolean
   activeResponse?: 1 | 2
+  gradingMode?: 'full' | 'deterministic_fallback'
+  requestedCount?: number
+  eligibleCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -161,6 +164,9 @@ function resizeResponsesWithKeyboard(event: KeyboardEvent) {
             :busy="isSelecting"
             :bridge-enabled="bridgeEnabled"
             :expanded="expandedCandidateId === finalist.candidateId"
+            :grading-mode="gradingMode"
+            :requested-count="requestedCount"
+            :eligible-count="eligibleCount"
             @select="choose"
             @toggle-expand="toggleExpand"
             @open-preview="emit('open-preview', $event)"

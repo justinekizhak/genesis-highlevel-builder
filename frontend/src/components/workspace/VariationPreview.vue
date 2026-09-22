@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { IconArrowsMaximize, IconArrowsMinimize, IconChartDots, IconExternalLink, IconLoader2 } from '@tabler/icons-vue'
+import { IconArrowsMaximize, IconArrowsMinimize, IconChartDots, IconExternalLink, IconLoader2, IconShieldCheck } from '@tabler/icons-vue'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { buildSrcdoc } from '@/lib/srcdoc'
 import { responseUiCopy } from '@/lib/variation-activity'
 import VariationEvidence from '@/components/workspace/VariationEvidence.vue'
+import VariationGradingDetails from '@/components/workspace/VariationGradingDetails.vue'
 import type { VariationFinalist } from '@/types/generation'
 
 const props = defineProps<{
@@ -15,6 +16,9 @@ const props = defineProps<{
   busy: boolean
   bridgeEnabled?: boolean
   expanded?: boolean
+  gradingMode?: 'full' | 'deterministic_fallback'
+  requestedCount?: number
+  eligibleCount?: number
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +27,7 @@ const emit = defineEmits<{
   'open-preview': [finalist: VariationFinalist]
 }>()
 const evidenceOpen = ref(false)
+const gradingDetailsOpen = ref(false)
 
 // Finalist source is only ever rendered through the existing sandboxed srcdoc path.
 const previewDocument = computed(() => buildSrcdoc(props.finalist.files, {
@@ -38,42 +43,61 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
       <div>
         <h3>{{ label }}</h3>
       </div>
-      <div class="variation-preview-header-actions">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          class="evidence-trigger"
-          data-evidence-trigger
-          :aria-label="`Why ${label} stands out`"
-          @click="evidenceOpen = true"
-        >
-          <IconChartDots :size="14" />
-          <span>Why it stands out</span>
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          data-open-new-tab
-          :aria-label="`Open ${label} in a new tab`"
-          :title="`Open ${label} in a new tab`"
-          @click="emit('open-preview', finalist)"
-        >
-          <IconExternalLink :size="16" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          data-toggle-expand
-          :aria-label="expanded ? `Restore split view` : `Expand ${label}`"
-          :title="expanded ? 'Restore split view' : `Expand ${label}`"
-          @click="emit('toggle-expand', finalist.candidateId)"
-        >
-          <IconArrowsMinimize v-if="expanded" :size="16" />
-          <IconArrowsMaximize v-else :size="16" />
-        </Button>
+      <div class="variation-preview-header-actions" role="group" aria-label="Response actions">
+        <div class="variation-insight-actions">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            class="evidence-trigger"
+            data-evidence-trigger
+            :aria-label="`Why ${label} stands out`"
+            @click="evidenceOpen = true"
+          >
+            <IconChartDots :size="14" />
+            <span class="action-label action-label-primary">Why it stands out</span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            class="grading-details-trigger"
+            data-grading-details-trigger
+            :aria-label="`How ${label} was scored`"
+            @click="gradingDetailsOpen = true"
+          >
+            <IconShieldCheck :size="14" />
+            <span class="action-label action-label-secondary">Scoring details</span>
+          </Button>
+        </div>
+        <span class="variation-action-divider" aria-hidden="true" />
+        <div class="variation-preview-tools">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            class="preview-tool-trigger"
+            data-open-new-tab
+            :aria-label="`Open ${label} in a new tab`"
+            :title="`Open ${label} in a new tab`"
+            @click="emit('open-preview', finalist)"
+          >
+            <IconExternalLink :size="15" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            class="preview-tool-trigger"
+            data-toggle-expand
+            :aria-label="expanded ? `Restore split view` : `Expand ${label}`"
+            :title="expanded ? 'Restore split view' : `Expand ${label}`"
+            @click="emit('toggle-expand', finalist.candidateId)"
+          >
+            <IconArrowsMinimize v-if="expanded" :size="15" />
+            <IconArrowsMaximize v-else :size="15" />
+          </Button>
+        </div>
       </div>
     </header>
 
@@ -106,11 +130,30 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
         <VariationEvidence :standout="displayStandout" :label="label" />
       </SheetContent>
     </Sheet>
+
+    <Sheet v-model:open="gradingDetailsOpen">
+      <SheetContent class="grading-details-sheet" side="right">
+        <SheetHeader class="grading-details-header">
+          <SheetTitle>How {{ label }} was scored</SheetTitle>
+          <SheetDescription>The rubric, evidence, and design brief behind this response.</SheetDescription>
+        </SheetHeader>
+        <VariationGradingDetails
+          :label="label"
+          :grading-mode="gradingMode"
+          :internal-rank="finalist.internalRank"
+          :requested-count="requestedCount"
+          :eligible-count="eligibleCount"
+          :brief="finalist.brief"
+          :rubric="finalist.rubric"
+        />
+      </SheetContent>
+    </Sheet>
   </article>
 </template>
 
 <style scoped>
 .variation-preview {
+  container-type: inline-size;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
@@ -127,10 +170,10 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
 
 .variation-preview-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 13px 14px;
+  gap: 18px;
+  padding: 12px 14px;
   min-width: 0;
 }
 
@@ -140,20 +183,77 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
   display: flex;
   flex: none;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  padding: 3px;
+  border: 1px solid #30312c;
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgb(32 33 29 / 92%), rgb(22 23 20 / 96%));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 8px 22px rgb(0 0 0 / 0.14);
+}
+
+.variation-insight-actions,
+.variation-preview-tools {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.variation-action-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: #383933;
 }
 
 .evidence-trigger {
-  border-color: #35362f;
-  background: #1a1b17;
-  color: #c9b077;
+  border-color: #5a4a2a;
+  background: #292315;
+  color: #e6c374;
   font-size: 12px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.045);
 }
 
 .evidence-trigger:hover {
-  border-color: #6a562d;
-  background: #221f14;
-  color: #efc973;
+  transform: translateY(-1px);
+  border-color: #8a7039;
+  background: #342a18;
+  color: #f1cf7e;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07), 0 5px 14px rgb(0 0 0 / 0.2);
+}
+
+.grading-details-trigger {
+  border-color: transparent;
+  background: transparent;
+  color: #aaa9a1;
+  font-size: 12px;
+}
+
+.grading-details-trigger:hover {
+  transform: translateY(-1px);
+  border-color: #41423b;
+  background: #292a25;
+  color: #e2e1da;
+}
+
+.preview-tool-trigger {
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #8d8e86;
+}
+
+.preview-tool-trigger:hover {
+  transform: translateY(-1px);
+  border-color: #41423b;
+  background: #292a25;
+  color: #f2f1ed;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.16);
+}
+
+.evidence-trigger:focus-visible,
+.grading-details-trigger:focus-visible,
+.preview-tool-trigger:focus-visible {
+  border-color: #cda952;
+  box-shadow: 0 0 0 2px #11120f, 0 0 0 4px rgb(223 184 95 / 0.48);
 }
 
 .variation-preview-header h3 {
@@ -220,6 +320,25 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
 
 .spin {
   animation: variation-spin 900ms linear infinite;
+}
+
+@container (max-width: 650px) {
+  .action-label-secondary { display: none; }
+
+  .grading-details-trigger {
+    width: 32px;
+    padding-inline: 0;
+  }
+}
+
+@container (max-width: 510px) {
+  .variation-preview-header { gap: 8px; }
+  .action-label-primary { display: none; }
+
+  .evidence-trigger {
+    width: 32px;
+    padding-inline: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

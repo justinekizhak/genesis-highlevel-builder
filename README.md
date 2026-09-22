@@ -9,22 +9,32 @@ HighLevel isn't connected, Genesis won't generate — that's enforced both in th
 
 ## Reviewing this submission? Start here
 
-New to the codebase? Begin with the [backend high-level design and Excalidraw walkthrough](docs/BACKEND_HLD.md).
+New to the codebase? Begin with the [backend high-level design and Excalidraw walkthrough](docs/BACKEND_HLD.md). For the multi-app-variation feature specifically, see the [Multi-App Preview: Backend Guide](docs/MULTI_APP_PREVIEW_BACKEND.md).
 
 - API contract: [`docs/openapi.yaml`](docs/openapi.yaml) and [`docs/API.md`](docs/API.md)
-- Security assessment: [`docs/SECURITY.md`](docs/SECURITY.md)
+- Marketplace submission kit: [`docs/MARKETPLACE_LISTING.md`](docs/MARKETPLACE_LISTING.md)
+- Security assessment: not yet written as a standalone document — see "Architecture decisions" and "What I would improve" below for the controls in place and known gaps.
 
 | Requirement | Where | Proof in 30 seconds |
 |---|---|---|
 | Email/password auth + session persistence | [`views/AuthView.vue`](frontend/src/views/AuthView.vue), [`stores/auth.ts`](frontend/src/stores/auth.ts) | Sign in, refresh the page |
-| HighLevel OAuth + token storage/refresh | [`highlevel/tokens.ts`](functions/src/highlevel/tokens.ts), [`index.ts`](functions/src/index.ts) (`hlOAuthStart`/`hlAuthCallback`) | Dashboard → Connect HighLevel |
-| Project CRUD, owner-scoped rules | [`stores/projects.ts`](frontend/src/stores/projects.ts), [`firestore.rules`](firestore.rules) | Create/rename/delete a project on the dashboard |
+| HighLevel OAuth 2.0, callback, secure token storage, refresh | [`highlevel/tokens.ts`](functions/src/highlevel/tokens.ts), [`index.ts`](functions/src/index.ts) (`hlOAuthStart`/`hlAuthCallback`) | Dashboard → Connect HighLevel, inspect the connected location label |
+| Owner-scoped project CRUD + soft delete | [`stores/projects.ts`](frontend/src/stores/projects.ts), [`firestore.rules`](firestore.rules) | Create/rename/delete a project; a different Firebase user cannot read it |
+| Server-side AI orchestration with bounded context | [`generate/openai.ts`](functions/src/generate/openai.ts), [`generate/persistence.ts`](functions/src/generate/persistence.ts) | Generate twice and confirm the second request receives current files and recent messages |
 | SSE streaming + event protocol | [`index.ts`](functions/src/index.ts) (`generateApp`), [`shared/protocol.ts`](functions/src/shared/protocol.ts) | Send a prompt, watch tokens land live in Monaco |
 | Real HighLevel data only, connection mandatory | [`generate/openai.ts`](functions/src/generate/openai.ts) (system prompt), [`index.ts`](functions/src/index.ts) `generateApp` | Generation is blocked server-side until `project.locationId` is set |
+| File tree, reading, and manual saves | [`components/workspace/WorkspaceShell.vue`](frontend/src/components/workspace/WorkspaceShell.vue), `PUT /api/v1/projects/{projectId}/files` | Switch among the three files, edit one, save, and reload |
+| shadcn-vue-based Vue 3 SPA | [`frontend/components.json`](frontend/components.json), [`frontend/src/components/ui/`](frontend/src/components/ui/) | Inspect the generated component registry and the auth/dashboard/workspace UI |
 | Monaco editor, tabs, read-only while streaming | [`components/workspace/WorkspaceShell.vue`](frontend/src/components/workspace/WorkspaceShell.vue) | Send any prompt, watch the editor |
-| Live preview, sandboxed iframe | [`lib/srcdoc.ts`](frontend/src/lib/srcdoc.ts) | Generated dashboard lists your sandbox contacts |
+| Live preview, sandboxed iframe, real HighLevel data | [`lib/srcdoc.ts`](frontend/src/lib/srcdoc.ts) | Generated dashboard lists your sandbox contacts |
 | Snapshots on generation **and** manual edits + restore | [`generate/persistence.ts`](functions/src/generate/persistence.ts), snapshot sheet in `WorkspaceShell.vue` | Edit a file → History icon → see a "Manual edit" entry → Restore |
+| Graceful malformed response, stream interruption, API errors | structured stream parser, validation layer, partial persistence, workspace error UI | Stop a generation or force an invalid API call; completed work remains and a clear error appears |
 | Rate limiting | [`http/rate-limit.ts`](functions/src/http/rate-limit.ts) | 5 generations/min, 50/day, 60 HL-proxy calls/min per user |
+| Secrets and environment templates | `.env.example`, `frontend/.env.example`, `functions/.env.example`, Firebase Secret Manager bindings | Confirm secrets are absent from source and Functions can read configured secrets |
+| Firebase Hosting and Functions deployment | `firebase.json`, `.firebaserc`, [`.github/workflows/firebase-deploy.yml`](.github/workflows/firebase-deploy.yml) | Open the live URL and the `/api/v1/health` endpoint |
+| Versioned REST API and OpenAPI 3.1 contract | [`functions/src/http/api-v1.ts`](functions/src/http/api-v1.ts), [`docs/openapi.yaml`](docs/openapi.yaml), [`docs/API.md`](docs/API.md) | Import the contract into Swagger Editor and call `/api/v1/health` |
+| Automated browser UI coverage | [`frontend/e2e/public.spec.ts`](frontend/e2e/public.spec.ts), [`frontend/playwright.config.ts`](frontend/playwright.config.ts) | Run `pnpm run test:ui` for desktop and mobile Chromium checks |
+| Marketplace submission package | [`docs/MARKETPLACE_LISTING.md`](docs/MARKETPLACE_LISTING.md), `frontend/public/brand/`, `upload-ready-screenshots/` | Review the final copy, icon, screenshot inventory, and pre-submission gaps |
 | Bonuses implemented | see below | Stop button, refinement prompts, "View changes" diff, rate limiting, generated-app pagination, HighLevel webhooks |
 
 ## What it does
@@ -82,7 +92,7 @@ The API uses versioned REST resource paths under `/api/v1`. The previous named C
 - Firebase Hosting: https://jk-ai-app-builder.web.app
 - Cloud Functions base URL: https://jk-ai-app-builder.web.app/api
 - OAuth callback: https://jk-ai-app-builder.web.app/api/hlAuthCallback
-- Loom walkthrough: _add link before submitting_
+- Loom walkthrough: _add link before submitting — record a five-minute walkthrough covering sign-in, HighLevel connect, generation, refinement, and restore_
 
 ## HighLevel OAuth configuration
 
@@ -169,6 +179,18 @@ The non-secret production Functions parameters are stored in `functions/.env.jk-
 - Enable the Firestore TTL policy on `rateLimits`, `webhookDedupe`, and `users/*/hlEvents` in the deployed project — the `expiresAt` fields are written; enabling TTL is a one-time `gcloud` step per environment.
 - Add end-to-end sandbox fixtures for confirmed HighLevel writes and calendar availability.
 - Move the live preview to a dedicated `/preview.html` origin with its own CSP headers instead of inheriting the host page's (srcdoc inherits the parent CSP by spec).
+
+## Submission checklist
+
+- Public GitHub repository is reachable.
+- Firebase Hosting and `/api/v1/health` URLs are reachable.
+- Email/password is enabled in Firebase Authentication.
+- Firestore rules and indexes are deployed.
+- `OPENAI_API_KEY` and `HL_CLIENT_SECRET` are bound in Secret Manager.
+- HighLevel marketplace scopes and OAuth redirect URI match this README.
+- A sandbox location with contacts and at least one calendar is connected.
+- The five-minute Loom walkthrough is recorded and its final URL replaces the placeholder above and appears in the submission email.
+- The screenshot set in [`docs/MARKETPLACE_LISTING.md`](docs/MARKETPLACE_LISTING.md) contains only synthetic sandbox data and approved account identifiers.
 
 ## Deployment notes
 

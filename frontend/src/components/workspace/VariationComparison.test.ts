@@ -132,6 +132,29 @@ describe('VariationComparison', () => {
     wrapper.unmount()
   })
 
+  it('groups each response toolbar into clearly named insight and preview controls', async () => {
+    const wrapper = mount(VariationComparison, { props: { finalists }, attachTo: document.body })
+    const toolbars = wrapper.findAll('[role="group"]')
+
+    expect(toolbars).toHaveLength(2)
+    for (const [index, toolbar] of toolbars.entries()) {
+      const label = `Response ${index + 1}`
+      expect(toolbar.attributes('aria-label')).toBe(`${label} actions`)
+      expect(toolbar.text()).toContain('Why it stands out')
+      expect(toolbar.text()).toContain('Scoring details')
+      expect(toolbar.find('[data-evidence-trigger]').attributes('aria-label')).toBe(`Why ${label} stands out`)
+      expect(toolbar.find('[data-evidence-trigger]').attributes('title')).toBe(`Why ${label} stands out`)
+      expect(toolbar.find('[data-grading-details-trigger]').attributes('aria-label')).toBe(`How ${label} was scored`)
+      expect(toolbar.find('[data-grading-details-trigger]').attributes('title')).toBe(`How ${label} was scored`)
+      expect(toolbar.find('[data-open-new-tab]').attributes('aria-label')).toBe(`Open ${label} in a new tab`)
+      expect(toolbar.find('[data-toggle-expand]').attributes('aria-label')).toBe(`Expand ${label}`)
+    }
+
+    await toolbars[0]!.find('[data-grading-details-trigger]').trigger('click')
+    expect(document.body.textContent).toContain('How Response 1 was scored')
+    wrapper.unmount()
+  })
+
   it('lets the user resize the two response previews with the keyboard', async () => {
     const wrapper = mount(VariationComparison, { props: { finalists } })
     const separator = wrapper.get('[aria-label="Resize response previews"]')

@@ -2,11 +2,40 @@ export type CandidatePhase = 'summary' | 'markup' | 'styles' | 'logic'
 
 export type VariationDisplayName = 'Direction A' | 'Direction B'
 
+export type VariationBrief = {
+  id: string
+  title: string
+  designIntent: string
+  informationArchitecture: string
+  interactionModel: string
+  visualDirection: string
+  density: 'compact' | 'balanced' | 'spacious'
+  differentiators: string[]
+}
+
+export type VariationRubric = {
+  featureFidelity: number
+  functionalCorrectness: number
+  robustness: number
+  usability: number
+  accessibility: number
+  responsiveness: number
+  maintainability: number
+  standout: string
+  evidence: Array<{ path: 'index.html' | 'styles.css' | 'app.js'; detail: string }>
+}
+
 export type FinalistMetadata = {
   candidateId: string
   displayName: VariationDisplayName
   summary: string
   standout: string
+  /** Rank among the graded finalists (1 = highest-scoring). Absent only on deterministic fallback. */
+  internalRank?: number
+  scoreBreakdown?: Record<string, number>
+  brief?: VariationBrief
+  /** Absent only when grading fell back to the deterministic ranking (no rubric model call was made). */
+  rubric?: VariationRubric
 }
 
 /**
@@ -22,6 +51,9 @@ export type VariationGenerationEvent =
   | { type: 'candidate_failed'; candidateId: string; recoverable: boolean }
   | { type: 'variation_validation_started'; completedCount: number }
   | { type: 'variation_validation_complete'; eligibleCount: number }
+  // Grading now starts as soon as the first candidate qualifies, before the rest of the batch is
+  // known to be eligible, so `eligibleCount` here is the candidate-set size (an upper bound), not
+  // the final qualifying count — that final count is only known at `variation_validation_complete`.
   | { type: 'variation_grading_started'; eligibleCount: number }
   | { type: 'variation_grading_progress'; completedCount: number; totalCount: number }
   | { type: 'variation_grading_complete'; gradingMode: 'full' | 'deterministic_fallback' }

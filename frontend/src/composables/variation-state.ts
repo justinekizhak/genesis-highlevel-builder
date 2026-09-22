@@ -113,12 +113,20 @@ function withFinalist(
 function toReadyState(
   variationSetId: string,
   finalists: Record<string, VariationFinalist>,
+  meta?: { gradingMode?: 'full' | 'deterministic_fallback'; eligibleCount?: number; requestedCount?: number },
 ): WorkspaceGenerationState {
   const ordered = orderFinalists(Object.values(finalists))
   if (ordered.length !== 2) {
     throw new VariationReconstructionError('The comparison arrived incomplete. Reload the project to restore both responses.')
   }
-  return { mode: 'variations-ready', variationSetId, finalists: [ordered[0]!, ordered[1]!] }
+  return {
+    mode: 'variations-ready',
+    variationSetId,
+    gradingMode: meta?.gradingMode,
+    eligibleCount: meta?.eligibleCount,
+    requestedCount: meta?.requestedCount,
+    finalists: [ordered[0]!, ordered[1]!],
+  }
 }
 
 const phaseForEvent: Partial<Record<GenerationEvent['type'], VariationPhase>> = {
@@ -156,7 +164,9 @@ export function reduceVariationEvent(
 
   switch (event.type) {
     case 'variation_set_started':
-      return { ...next, variationSetId: event.variationSetId }
+      return { ...next, variationSetId: event.variationSetId, requestedCount: event.count }
+    case 'variation_validation_complete':
+      return { ...next, eligibleCount: event.eligibleCount }
     case 'candidate_started':
       return {
         ...next,
@@ -184,6 +194,10 @@ export function reduceVariationEvent(
           displayName: entry.displayName,
           summary: entry.summary,
           standout: entry.standout,
+          internalRank: entry.internalRank,
+          scoreBreakdown: entry.scoreBreakdown,
+          brief: entry.brief,
+          rubric: entry.rubric,
         }))
       }
       return { ...next, variationSetId: event.variationSetId, finalists }
@@ -216,7 +230,11 @@ export function reduceVariationEvent(
     }
     case 'finalists_ready':
     case 'variation_complete':
-      return toReadyState(event.variationSetId ?? next.variationSetId ?? '', next.finalists)
+      return toReadyState(event.variationSetId ?? next.variationSetId ?? '', next.finalists, {
+        gradingMode: next.gradingMode,
+        eligibleCount: next.eligibleCount,
+        requestedCount: next.requestedCount,
+      })
     default:
       return next
   }
@@ -225,13 +243,13 @@ export function reduceVariationEvent(
 /** Rebuilds comparison state from a persisted variation set, bypassing the event stream entirely. */
 export function variationStateFromPayload(payload: {
   variationSetId: string
-  finalists: Array<{ candidateId: string; displayName: 'Direction A' | 'Direction B'; summary: string; standout: string; files: Record<string, string> }>
+  gradingMode?: 'full' | 'deterministic_fallback'
+  requestedCount?: number
+  eligibleCount?: number
+  finalists: Array<Omit<VariationFinalist, 'files'> & { files: Record<string, string> }>
 }): WorkspaceGenerationState {
   const finalists = orderFinalists(payload.finalists.map((entry) => ({
-    candidateId: entry.candidateId,
-    displayName: entry.displayName,
-    summary: entry.summary,
-    standout: entry.standout,
+    ...entry,
     files: Object.fromEntries(Object.entries(entry.files).map(([path, content]) => [path, {
       path,
       content,
@@ -241,5 +259,12 @@ export function variationStateFromPayload(payload: {
   if (finalists.length !== 2) {
     throw new VariationReconstructionError('That comparison is incomplete and can no longer be restored.')
   }
-  return { mode: 'variations-ready', variationSetId: payload.variationSetId, finalists: [finalists[0]!, finalists[1]!] }
+  return {
+    mode: 'variations-ready',
+    variationSetId: payload.variationSetId,
+    gradingMode: payload.gradingMode,
+    eligibleCount: payload.eligibleCount,
+    requestedCount: payload.requestedCount,
+    finalists: [finalists[0]!, finalists[1]!],
+  }
 }

@@ -108,6 +108,16 @@ function finalist(candidateId: string, rank: 1 | 2, displayName: 'Direction A' |
     scoreBreakdown: { featureFidelity: 28 },
     model: 'gpt-5.4-mini',
     usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+    brief: {
+      id: candidateId,
+      title: `Direction for ${candidateId}`,
+      designIntent: 'A clear, hierarchy-first layout.',
+      informationArchitecture: 'Single column with a sticky summary.',
+      interactionModel: 'Click-through cards.',
+      visualDirection: 'Warm neutral palette.',
+      density: 'balanced' as const,
+      differentiators: ['Sticky summary', 'Card-based navigation', 'Warm palette'],
+    },
   }
 }
 
@@ -192,12 +202,11 @@ describe('persistVariationFinalists', () => {
     expect(variationSet()).toMatchObject({ status: 'ready', requestedCount: 4, gradingMode: 'full', eligibleCount: 4 })
   })
 
-  it('never writes discarded candidate identifiers, briefs, or files', async () => {
+  it('never writes discarded candidates, only the two persisted finalists', async () => {
     const { persistVariationFinalists } = await loadModule()
     await persistVariationFinalists(persistInput)
-    const serialized = JSON.stringify([...fake.documents.entries()])
-    expect(serialized).not.toContain('designIntent')
-    expect(serialized).not.toContain('visualDirection')
+    const candidateIds = candidateDocumentPaths().map((path) => path.split('/').pop())
+    expect(candidateIds.sort()).toEqual(['candidate-a', 'candidate-b'])
     expect(variationSet()).not.toHaveProperty('candidates')
   })
 
@@ -211,14 +220,19 @@ describe('persistVariationFinalists', () => {
 })
 
 describe('loadVariationSet', () => {
-  it('returns both finalists to the owner without exposing scores or rank', async () => {
+  it('returns both finalists to the owner along with their scores, rank, and brief for transparency', async () => {
     const { persistVariationFinalists, loadVariationSet } = await loadModule()
     await persistVariationFinalists(persistInput)
     const payload = await loadVariationSet('user-1', 'project-1', 'set-1')
     expect(payload.finalists).toHaveLength(2)
     expect(payload.finalists.map((entry) => entry.candidateId).sort()).toEqual(['candidate-a', 'candidate-b'])
-    expect(payload.finalists[0]).not.toHaveProperty('scoreBreakdown')
-    expect(payload.finalists[0]).not.toHaveProperty('internalRank')
+    expect(payload.finalists[0]).toMatchObject({
+      scoreBreakdown: { featureFidelity: 28 },
+      internalRank: 1,
+      brief: { id: 'candidate-a' },
+    })
+    expect(payload.requestedCount).toBe(4)
+    expect(payload.eligibleCount).toBe(4)
     expect(payload.variationSetId).toBe('set-1')
   })
 

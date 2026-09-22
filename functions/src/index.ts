@@ -48,6 +48,7 @@ import { allowedApiV1Methods, resolveApiV1Route, type ApiV1Target } from './http
 import { applyCors } from './http/cors.js'
 import { enforceRateLimit, RateLimitError } from './http/rate-limit.js'
 import { serializeSse, type GenerationEvent } from './shared/protocol.js'
+import { withRequestTiming } from './shared/telemetry.js'
 
 initializeApp()
 
@@ -122,14 +123,14 @@ function httpError(response: Parameters<typeof applyCors>[1], cause: unknown) {
   response.status(status).json({ error: message })
 }
 
-export const healthz = onRequest({ region: 'us-central1', cors: false }, (request, response) => {
+export const healthz = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('healthz', (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') {
     response.status(204).end()
     return
   }
   response.json({ status: 'ok', service: 'genesis-functions', timestamp: new Date().toISOString() })
-})
+}))
 
 /** A variation batch costs four generation units; a single request costs one. */
 async function enforceGenerationQuotas(uid: string, weight: number) {
@@ -138,10 +139,10 @@ async function enforceGenerationQuotas(uid: string, weight: number) {
 }
 
 export const generateApp = onRequest(
-  // The multi-variant branch generates four candidates at concurrency two and then grades them,
+  // The multi-variant branch generates four candidates fully in parallel and then grades them,
   // so the streaming route needs the longer ceiling; memory stays at the current allocation.
   { region: 'us-central1', timeoutSeconds: 540, memory: '512MiB', cors: false, secrets: [openAiApiKey] },
-  async (request, response) => {
+  withRequestTiming('generateApp', async (request, response) => {
     let partialGeneration: {
       uid: string
       projectId: string
@@ -298,6 +299,10 @@ export const generateApp = onRequest(
             displayName: finalist.displayName,
             summary: finalist.summary,
             standout: finalist.standout,
+            internalRank: finalist.internalRank,
+            scoreBreakdown: finalist.scoreBreakdown,
+            brief: finalist.brief,
+            rubric: finalist.rubric,
           })),
         })
         for (const finalist of run.finalists) {
@@ -358,10 +363,10 @@ export const generateApp = onRequest(
       response.write(serializeSse({ type: 'error', code, message, recoverable: true }))
       response.end()
     }
-  },
+  }),
 )
 
-export const cancelGeneration = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const cancelGeneration = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('cancelGeneration', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') {
     response.status(204).end()
@@ -379,9 +384,9 @@ export const cancelGeneration = onRequest({ region: 'us-central1', cors: false }
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const projectSnapshots = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const projectSnapshots = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('projectSnapshots', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
@@ -392,9 +397,9 @@ export const projectSnapshots = onRequest({ region: 'us-central1', cors: false }
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const saveFiles = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const saveFiles = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('saveFiles', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'POST' && request.method !== 'PUT') return void response.status(405).json({ error: 'Method not allowed' })
@@ -406,9 +411,9 @@ export const saveFiles = onRequest({ region: 'us-central1', cors: false }, async
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const projectSnapshotFiles = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const projectSnapshotFiles = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('projectSnapshotFiles', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
@@ -419,9 +424,9 @@ export const projectSnapshotFiles = onRequest({ region: 'us-central1', cors: fal
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const updateSnapshot = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const updateSnapshot = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('updateSnapshot', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'POST' && request.method !== 'PATCH') return void response.status(405).json({ error: 'Method not allowed' })
@@ -432,9 +437,9 @@ export const updateSnapshot = onRequest({ region: 'us-central1', cors: false }, 
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const restoreSnapshot = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const restoreSnapshot = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('restoreSnapshot', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
@@ -445,9 +450,9 @@ export const restoreSnapshot = onRequest({ region: 'us-central1', cors: false },
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const projectState = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const projectState = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('projectState', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
@@ -458,9 +463,9 @@ export const projectState = onRequest({ region: 'us-central1', cors: false }, as
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const projectVariationSet = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const projectVariationSet = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('projectVariationSet', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
@@ -471,9 +476,9 @@ export const projectVariationSet = onRequest({ region: 'us-central1', cors: fals
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const selectVariation = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const selectVariation = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('selectVariation', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
@@ -489,9 +494,9 @@ export const selectVariation = onRequest({ region: 'us-central1', cors: false },
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
-export const hlOAuthStart = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const hlOAuthStart = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('hlOAuthStart', async (request, response) => {
   applyCors(request, response)
   if (request.method === 'OPTIONS') return void response.status(204).end()
   if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
@@ -514,11 +519,11 @@ export const hlOAuthStart = onRequest({ region: 'us-central1', cors: false }, as
   } catch (cause) {
     httpError(response, cause)
   }
-})
+}))
 
 export const hlAuthCallback = onRequest(
   { region: 'us-central1', cors: false, secrets: [highLevelClientSecret] },
-  async (request, response) => {
+  withRequestTiming('hlAuthCallback', async (request, response) => {
     const code = typeof request.query.code === 'string' ? request.query.code : ''
     const state = typeof request.query.state === 'string' ? request.query.state : ''
     const fallback = new URL('/projects', applicationBaseUrl.value())
@@ -557,12 +562,12 @@ export const hlAuthCallback = onRequest(
       fallback.searchParams.set('oauth', 'failed')
       response.redirect(fallback.toString())
     }
-  },
+  }),
 )
 
 export const hlConnectionStatus = onRequest(
   { region: 'us-central1', cors: false, secrets: [highLevelClientSecret] },
-  async (request, response) => {
+  withRequestTiming('hlConnectionStatus', async (request, response) => {
     applyCors(request, response)
     if (request.method === 'OPTIONS') return void response.status(204).end()
     if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
@@ -577,12 +582,12 @@ export const hlConnectionStatus = onRequest(
     } catch (cause) {
       httpError(response, cause)
     }
-  },
+  }),
 )
 
 export const integrationStatus = onRequest(
   { region: 'us-central1', cors: false, secrets: [openAiApiKey, highLevelClientSecret] },
-  async (request, response) => {
+  withRequestTiming('integrationStatus', async (request, response) => {
     applyCors(request, response)
     if (request.method === 'OPTIONS') return void response.status(204).end()
     if (request.method !== 'GET') return void response.status(405).json({ error: 'Method not allowed' })
@@ -599,12 +604,12 @@ export const integrationStatus = onRequest(
     } catch (cause) {
       httpError(response, cause)
     }
-  },
+  }),
 )
 
 export const hlProxy = onRequest(
   { region: 'us-central1', cors: false, secrets: [highLevelClientSecret], timeoutSeconds: 60 },
-  async (request, response) => {
+  withRequestTiming('hlProxy', async (request, response) => {
     applyCors(request, response)
     if (request.method === 'OPTIONS') return void response.status(204).end()
     if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
@@ -617,10 +622,10 @@ export const hlProxy = onRequest(
     } catch (cause) {
       httpError(response, cause)
     }
-  },
+  }),
 )
 
-export const hlWebhook = onRequest({ region: 'us-central1', cors: false }, async (request, response) => {
+export const hlWebhook = onRequest({ region: 'us-central1', cors: false }, withRequestTiming('hlWebhook', async (request, response) => {
   if (request.method !== 'POST') return void response.status(405).json({ error: 'Method not allowed' })
   try {
     const payload = webhookPayloadSchema.parse(request.body)
@@ -633,7 +638,7 @@ export const hlWebhook = onRequest({ region: 'us-central1', cors: false }, async
     logger.error('HighLevel webhook processing failed', cause)
     response.status(200).json({ ok: true })
   }
-})
+}))
 
 const apiV1Handlers: Record<ApiV1Target, (request: Parameters<typeof healthz>[0], response: Parameters<typeof healthz>[1]) => unknown> = {
   healthz,

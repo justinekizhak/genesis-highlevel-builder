@@ -20,11 +20,40 @@ export type CandidatePhase = 'summary' | 'markup' | 'styles' | 'logic'
 
 export type VariationDisplayName = 'Direction A' | 'Direction B'
 
+export type VariationBrief = {
+  id: string
+  title: string
+  designIntent: string
+  informationArchitecture: string
+  interactionModel: string
+  visualDirection: string
+  density: 'compact' | 'balanced' | 'spacious'
+  differentiators: string[]
+}
+
+export type VariationRubric = {
+  featureFidelity: number
+  functionalCorrectness: number
+  robustness: number
+  usability: number
+  accessibility: number
+  responsiveness: number
+  maintainability: number
+  standout: string
+  evidence: Array<{ path: 'index.html' | 'styles.css' | 'app.js'; detail: string }>
+}
+
 export type FinalistMetadata = {
   candidateId: string
   displayName: VariationDisplayName
   summary: string
   standout: string
+  /** Rank among the graded finalists (1 = highest-scoring). Absent only on deterministic fallback. */
+  internalRank?: number
+  scoreBreakdown?: Record<string, number>
+  brief?: VariationBrief
+  /** Absent only when grading fell back to the deterministic ranking (no rubric model call was made). */
+  rubric?: VariationRubric
 }
 
 export type VariationGenerationEvent =
@@ -117,6 +146,8 @@ export type VariationSetPayload = {
   baseSnapshotId?: string
   initialSelectedCandidateId?: string
   activeCandidateId?: string
+  requestedCount: number
+  eligibleCount: number
   finalists: Array<FinalistMetadata & { files: Record<string, string> }>
 }
 
@@ -138,13 +169,25 @@ export type WorkspaceGenerationState =
       phase: VariationPhase
       gradingMode?: 'full' | 'deterministic_fallback'
       gradingProgress?: { completedCount: number; totalCount: number }
+      eligibleCount?: number
+      requestedCount?: number
       candidates: Record<string, CandidateProgress>
       finalists: Record<string, VariationFinalist>
     }
-  | { mode: 'variations-ready'; variationSetId: string; finalists: [VariationFinalist, VariationFinalist] }
+  | {
+      mode: 'variations-ready'
+      variationSetId: string
+      gradingMode?: 'full' | 'deterministic_fallback'
+      eligibleCount?: number
+      requestedCount?: number
+      finalists: [VariationFinalist, VariationFinalist]
+    }
   | {
       mode: 'variation-selecting'
       variationSetId: string
       candidateId: string
+      gradingMode?: 'full' | 'deterministic_fallback'
+      eligibleCount?: number
+      requestedCount?: number
       finalists: [VariationFinalist, VariationFinalist]
     }

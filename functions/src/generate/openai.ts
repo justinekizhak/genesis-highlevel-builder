@@ -1,9 +1,11 @@
 import { defineSecret, defineString } from 'firebase-functions/params'
+import { logger } from 'firebase-functions'
 import OpenAI, { APIError } from 'openai'
 import type { ResponseStreamEvent } from 'openai/resources/responses/responses.js'
 import { generatedApplicationSchema, applicationJsonSchema, type GeneratedApplication } from './application.js'
 import type { GenerationContext } from './persistence.js'
 import type { FeatureContract, VariationBrief } from './variation-types.js'
+import { timeOperation } from '../shared/telemetry.js'
 
 export const openAiApiKey = defineSecret('OPENAI_API_KEY')
 export const openAiModel = defineString('OPENAI_MODEL', { default: 'gpt-5.4-mini' })
@@ -486,32 +488,34 @@ export async function createStructuredResponse(request: StructuredResponseReques
   const apiKey = openAiApiKey.value()
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.')
   const client = new OpenAI({ apiKey })
-  try {
-    const response = await client.responses.create({
-      model: request.model,
-      stream: false,
-      store: false,
-      reasoning: { effort: request.reasoningEffort ?? 'low' },
-      max_output_tokens: request.maxOutputTokens ?? 6_000,
-      instructions: request.instructions,
-      input: request.input,
-      text: {
-        format: {
-          type: 'json_schema',
-          name: request.schemaName,
-          strict: true,
-          schema: request.schema as never,
+  return timeOperation('openai.structured_response', { model: request.model, schemaName: request.schemaName }, async () => {
+    try {
+      const response = await client.responses.create({
+        model: request.model,
+        stream: false,
+        store: false,
+        reasoning: { effort: request.reasoningEffort ?? 'low' },
+        max_output_tokens: request.maxOutputTokens ?? 6_000,
+        instructions: request.instructions,
+        input: request.input,
+        text: {
+          format: {
+            type: 'json_schema',
+            name: request.schemaName,
+            strict: true,
+            schema: request.schema as never,
+          },
         },
-      },
-    } as never, { signal: request.signal })
-    return readResponseText(response)
-  } catch (error) {
-    if (error instanceof APIError) {
-      const body = error.error as { message?: string } | null | undefined
-      throw new Error(friendlyOpenAiError(error.status, { message: body?.message ?? error.message, code: error.code }))
+      } as never, { signal: request.signal })
+      return readResponseText(response)
+    } catch (error) {
+      if (error instanceof APIError) {
+        const body = error.error as { message?: string } | null | undefined
+        throw new Error(friendlyOpenAiError(error.status, { message: body?.message ?? error.message, code: error.code }))
+      }
+      throw error
     }
-    throw error
-  }
+  })
 }
 
 export type GenerationDirective = {
@@ -564,6 +568,7 @@ export async function generateWithOpenAi(
   if (!apiKey) throw new Error('OPENAI_API_KEY is not configured.')
 
   const client = new OpenAI({ apiKey })
+  const startedAt = Date.now()
 
   let stream: AsyncIterable<ResponseStreamEvent>
   try {
@@ -585,27 +590,48 @@ export async function generateWithOpenAi(
       },
     }, { signal })
   } catch (error) {
+    logger.warn('perf.operation', { operation: 'openai.generate.stream_open', durationMs: Date.now() - startedAt, model, failed: true })
     if (error instanceof APIError) {
       const body = error.error as { message?: string } | null | undefined
       throw new Error(friendlyOpenAiError(error.status, { message: body?.message ?? error.message, code: error.code }))
     }
     throw error
   }
+  const streamOpenedMs = Date.now() - startedAt
 
   let text = ''
-  for await (const event of stream) {
-    if (event.type === 'response.output_text.delta' && event.delta) {
-      text += event.delta
-      onDelta?.(event.delta)
+  let firstTokenMs: number | undefined
+  try {
+    for await (const event of stream) {
+      if (event.type === 'response.output_text.delta' && event.delta) {
+        if (firstTokenMs === undefined) firstTokenMs = Date.now() - startedAt
+        text += event.delta
+        onDelta?.(event.delta)
+      }
+      if (event.type === 'error' || event.type === 'response.failed') {
+        throw new Error(friendlyOpenAiError(undefined, errorEventDetail(event)))
+      }
+      if (event.type === 'response.completed' && event.response.usage) {
+        const usage = event.response.usage
+        onUsage?.({ inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens })
+      }
     }
-    if (event.type === 'error' || event.type === 'response.failed') {
-      throw new Error(friendlyOpenAiError(undefined, errorEventDetail(event)))
-    }
-    if (event.type === 'response.completed' && event.response.usage) {
-      const usage = event.response.usage
-      onUsage?.({ inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, totalTokens: usage.total_tokens })
-    }
+  } catch (error) {
+    logger.warn('perf.operation', {
+      operation: 'openai.generate',
+      durationMs: Date.now() - startedAt,
+      streamOpenedMs,
+      firstTokenMs,
+      model,
+      failed: true,
+    })
+    throw error
   }
+  const durationMs = Date.now() - startedAt
+  const entry = { operation: 'openai.generate', durationMs, streamOpenedMs, firstTokenMs, model, outputChars: text.length }
+  if (durationMs >= 1_000) logger.warn('perf.operation', entry)
+  else logger.info('perf.operation', entry)
+
   if (!text) throw new Error('The model returned no application output.')
   return generatedApplicationSchema.parse(JSON.parse(text))
 }

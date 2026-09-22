@@ -131,44 +131,62 @@ function shuffled<T>(values: readonly T[]): T[] {
   return copy
 }
 
-async function gradeIndependently(
-  input: GradeVariationsInput,
-  blinded: Array<ReturnType<typeof blindedCandidate>>,
-): Promise<CandidateScore[]> {
-  let completedCount = 0
-  const signal = input.signal ?? new AbortController().signal
-  const settled = await mapWithConcurrency(blinded, VARIATION_CONCURRENCY, signal, async (entry) => {
-    const text = await createStructuredResponse({
-      model: openAiVariationGraderModel.value(),
-      instructions: rubricPreamble,
-      input: [
-        `USER REQUEST:\n${input.prompt}`,
-        `SHARED FEATURE CONTRACT:\n${JSON.stringify(input.featureContract)}`,
-        `DETERMINISTIC EVIDENCE:\n${JSON.stringify(entry.deterministicEvidence)}`,
-        `CANDIDATE ALIAS: ${entry.alias}`,
-        `BEGIN UNTRUSTED CANDIDATE SOURCE\n${entry.source}\nEND UNTRUSTED CANDIDATE SOURCE`,
-      ].join('\n\n'),
-      schemaName: 'genesis_variation_rubric',
-      schema: rubricJsonSchema,
-      reasoningEffort: 'medium',
-      maxOutputTokens: 6_000,
-      signal: input.signal,
-    })
-    const rubric = rubricSchema.parse(JSON.parse(text))
-    completedCount += 1
-    input.onProgress?.(completedCount, blinded.length)
-    return { alias: entry.alias, rubric: { ...rubric, alias: entry.alias }, deterministicScore: 0 } satisfies CandidateScore
-  })
-  const failure = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-  if (failure) throw failure.reason
-  return settled.map((result) => (result as PromiseFulfilledResult<CandidateScore>).value)
+export type GradeCandidateContext = {
+  prompt: string
+  featureContract: FeatureContract
+  signal?: AbortSignal
 }
 
-function deterministicRanking(
-  input: GradeVariationsInput,
-  aliasByCandidateId: Map<string, string>,
-): RankedCandidate[] {
-  return [...input.candidates]
+export type GradeCandidateResult =
+  | { candidateId: string; graded: true; score: CandidateScore }
+  | { candidateId: string; graded: false }
+
+/**
+ * Grades exactly one candidate, with its own alias and its own retry budget. Kept independent of
+ * the rest of the variation set so a caller can start grading a candidate the moment it is ready,
+ * instead of waiting for every sibling to finish generating first — see
+ * `runVariationGeneration` in variation-orchestrator.ts, which fires this per candidate as soon as
+ * that candidate is generated and validated.
+ */
+export async function gradeCandidate(candidate: GraderCandidate, context: GradeCandidateContext): Promise<GradeCandidateResult> {
+  const alias = randomUUID()
+  const blinded = blindedCandidate(alias, candidate)
+
+  for (let attempt = 1; attempt <= GRADER_ATTEMPTS; attempt += 1) {
+    try {
+      const text = await createStructuredResponse({
+        model: openAiVariationGraderModel.value(),
+        instructions: rubricPreamble,
+        input: [
+          `USER REQUEST:\n${context.prompt}`,
+          `SHARED FEATURE CONTRACT:\n${JSON.stringify(context.featureContract)}`,
+          `DETERMINISTIC EVIDENCE:\n${JSON.stringify(blinded.deterministicEvidence)}`,
+          `CANDIDATE ALIAS: ${alias}`,
+          `BEGIN UNTRUSTED CANDIDATE SOURCE\n${blinded.source}\nEND UNTRUSTED CANDIDATE SOURCE`,
+        ].join('\n\n'),
+        schemaName: 'genesis_variation_rubric',
+        schema: rubricJsonSchema,
+        reasoningEffort: 'low',
+        maxOutputTokens: 2_500,
+        signal: context.signal,
+      })
+      const rubric = rubricSchema.parse(JSON.parse(text))
+      const score: CandidateScore = { alias, rubric: { ...rubric, alias }, deterministicScore: candidate.qualification.deterministicScore }
+      return { candidateId: candidate.candidateId, graded: true, score }
+    } catch (cause) {
+      if (context.signal?.aborted) throw cause
+      logger.warn('Variation candidate grading attempt failed', {
+        candidateId: candidate.candidateId,
+        attempt,
+        reason: cause instanceof Error ? cause.message : 'unknown',
+      })
+    }
+  }
+  return { candidateId: candidate.candidateId, graded: false }
+}
+
+function deterministicRanking(candidates: GraderCandidate[], aliasByCandidateId: Map<string, string>): RankedCandidate[] {
+  return [...candidates]
     .sort((left, right) => (
       right.qualification.deterministicScore - left.qualification.deterministicScore
       || left.candidateId.localeCompare(right.candidateId)
@@ -185,40 +203,52 @@ function deterministicRanking(
 }
 
 /**
- * Blinded grading. Candidates are shuffled and given random aliases before anything reaches the
- * model, so variation briefs, generation order, model identity, and display position can never
- * influence a score. Each candidate is scored independently against the rubric; ranking and
- * finalist selection are hard logic, not a second model pass.
+ * Combines already-computed per-candidate grading results into a final ranking. Pure in-memory
+ * logic, no model calls: if every candidate was scored against the rubric, rank by that score; if
+ * any candidate exhausted its retries, every candidate falls back to deterministic ranking so the
+ * comparison stays apples-to-apples rather than mixing rubric points with deterministic points.
  */
-export async function gradeVariations(input: GradeVariationsInput): Promise<VariationGradingResult> {
-  const aliasByCandidateId = new Map<string, string>()
-  const blinded = shuffled(input.candidates).map((candidate) => {
-    const alias = randomUUID()
-    aliasByCandidateId.set(candidate.candidateId, alias)
-    return { candidate, blinded: blindedCandidate(alias, candidate) }
-  })
-  const candidateIdByAlias = new Map([...aliasByCandidateId].map(([candidateId, alias]) => [alias, candidateId]))
-  const deterministicByAlias = new Map(blinded.map((entry) => [entry.blinded.alias, entry.candidate.qualification.deterministicScore]))
-
-  for (let attempt = 1; attempt <= GRADER_ATTEMPTS; attempt += 1) {
-    try {
-      const scores = (await gradeIndependently(input, blinded.map((entry) => entry.blinded)))
-        .map((score) => ({ ...score, deterministicScore: deterministicByAlias.get(score.alias) ?? 0 }))
-      return {
-        ranked: rankCandidates(scores).map((candidate) => ({
-          ...candidate,
-          candidateId: candidateIdByAlias.get(candidate.alias),
-        })),
-        gradingMode: 'full',
-      }
-    } catch (cause) {
-      if (input.signal?.aborted) throw cause
-      logger.warn('Variation grading attempt failed', {
-        attempt,
-        reason: cause instanceof Error ? cause.message : 'unknown',
-      })
+export function rankGradedCandidates(candidates: GraderCandidate[], results: GradeCandidateResult[]): VariationGradingResult {
+  const allGraded = results.every((result): result is Extract<GradeCandidateResult, { graded: true }> => result.graded)
+  if (allGraded) {
+    const candidateIdByAlias = new Map(results.map((result) => [result.score.alias, result.candidateId]))
+    const scores = results.map((result) => result.score)
+    return {
+      ranked: rankCandidates(scores).map((candidate) => ({
+        ...candidate,
+        candidateId: candidateIdByAlias.get(candidate.alias),
+      })),
+      gradingMode: 'full',
     }
   }
+  const aliasByCandidateId = new Map(
+    results
+      .filter((result): result is Extract<GradeCandidateResult, { graded: true }> => result.graded)
+      .map((result) => [result.candidateId, result.score.alias]),
+  )
+  return { ranked: deterministicRanking(candidates, aliasByCandidateId), gradingMode: 'deterministic_fallback' }
+}
 
-  return { ranked: deterministicRanking(input, aliasByCandidateId), gradingMode: 'deterministic_fallback' }
+/**
+ * Blinded batch grading, kept for callers that already have every candidate in hand. Candidates
+ * are shuffled before grading purely for defense in depth (aliases are already random UUIDs, so
+ * order carries no information); each is graded independently via `gradeCandidate`, and the
+ * result is combined with `rankGradedCandidates`. `runVariationGeneration` no longer calls this —
+ * it grades each candidate as soon as it is ready instead of waiting for the whole batch — but
+ * this remains the entry point for anything that wants a single call over an already-complete set.
+ */
+export async function gradeVariations(input: GradeVariationsInput): Promise<VariationGradingResult> {
+  const signal = input.signal ?? new AbortController().signal
+  let completedCount = 0
+  const total = input.candidates.length
+  const settled = await mapWithConcurrency(shuffled(input.candidates), VARIATION_CONCURRENCY, signal, async (candidate) => {
+    const result = await gradeCandidate(candidate, { prompt: input.prompt, featureContract: input.featureContract, signal: input.signal })
+    completedCount += 1
+    input.onProgress?.(completedCount, total)
+    return result
+  })
+  const failure = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (failure) throw failure.reason
+  const results = settled.map((result) => (result as PromiseFulfilledResult<GradeCandidateResult>).value)
+  return rankGradedCandidates(input.candidates, results)
 }

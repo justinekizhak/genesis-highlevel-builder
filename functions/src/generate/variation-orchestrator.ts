@@ -6,7 +6,7 @@ import { generateWithOpenAi } from './openai.js'
 import type { GenerationContext } from './persistence.js'
 import { StructuredApplicationStream } from './structured-stream.js'
 import { qualifyGeneratedApplication, type QualificationResult } from './validate.js'
-import { gradeVariations, type GraderCandidate } from './variation-grader.js'
+import { gradeCandidate, rankGradedCandidates, type GradeCandidateResult, type GraderCandidate } from './variation-grader.js'
 import {
   VARIATION_CANDIDATE_COUNT,
   VARIATION_CONCURRENCY,
@@ -14,6 +14,7 @@ import {
   type FeatureContract,
   type GenerationPlan,
   type GradingMode,
+  type RubricScore,
   type TokenUsage,
   type VariationBrief,
 } from './variation-types.js'
@@ -50,6 +51,10 @@ export type VariationFinalist = {
   scoreBreakdown: Record<string, number>
   model: string
   usage: TokenUsage
+  /** The creative brief this candidate was generated from — kept out of the grader, exposed here for transparency. */
+  brief: VariationBrief
+  /** Absent only when grading fell back to `deterministicRanking`, which never calls the rubric model. */
+  rubric?: RubricScore
 }
 
 export type VariationRunResult = {
@@ -121,6 +126,29 @@ function displayNamesFor(variationSetId: string): [VariationDisplayName, Variati
 }
 
 export async function runVariationGeneration(input: VariationRunInput): Promise<VariationRunResult> {
+  const startedAt = Date.now()
+  try {
+    const result = await runVariationGenerationInner(input)
+    logger.info('perf.operation', {
+      operation: 'variation.run',
+      durationMs: Date.now() - startedAt,
+      variationSetId: result.variationSetId,
+      gradingMode: result.gradingMode,
+      eligibleCount: result.eligibleCount,
+    })
+    return result
+  } catch (error) {
+    logger.warn('perf.operation', {
+      operation: 'variation.run',
+      durationMs: Date.now() - startedAt,
+      failed: true,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
+}
+
+async function runVariationGenerationInner(input: VariationRunInput): Promise<VariationRunResult> {
   const briefs = input.plan.variants
   if (briefs.length !== VARIATION_CANDIDATE_COUNT) {
     throw new Error(`A variation run requires exactly ${VARIATION_CANDIDATE_COUNT} briefs.`)
@@ -139,7 +167,29 @@ export async function runVariationGeneration(input: VariationRunInput): Promise<
     onProgress: () => undefined,
   }))
 
-  const settled = await mapWithConcurrency(tasks, VARIATION_CONCURRENCY, input.signal, async (task) => {
+  let gradingStarted = false
+  let gradedCount = 0
+  const startGrading = () => {
+    if (gradingStarted) return
+    gradingStarted = true
+    input.onEvent({ type: 'variation_grading_started', eligibleCount: VARIATION_CANDIDATE_COUNT })
+  }
+
+  type PipelinedEntry = {
+    task: CandidateTask
+    result: CandidateResult
+    qualification: QualificationResult
+    grading: GradeCandidateResult | null
+  }
+
+  // Each candidate runs generate -> validate -> (if eligible) grade as one chain, so a candidate's
+  // grading call fires the moment IT is ready and overlaps with siblings still generating, instead
+  // of every candidate waiting for the whole batch to finish generating before grading starts for
+  // any of them. Because VARIATION_CONCURRENCY equals the candidate count, every chain runs fully
+  // in parallel with the others; a candidate that ultimately gets discarded (e.g. the run ends up
+  // short on qualifying candidates) may still have spent a grading call — an acceptable trade for
+  // not paying the full generation tail before grading can even begin on the common path.
+  const settled = await mapWithConcurrency(tasks, VARIATION_CONCURRENCY, input.signal, async (task): Promise<PipelinedEntry> => {
     input.onEvent({ type: 'candidate_started', candidateId: task.candidateId, index: task.index })
     const emitted = new Set<CandidatePhase>()
     const result = await generate({
@@ -151,14 +201,33 @@ export async function runVariationGeneration(input: VariationRunInput): Promise<
       },
     })
     input.onEvent({ type: 'candidate_complete', candidateId: task.candidateId })
-    return result
+
+    const qualification = qualifyGeneratedApplication(result.application, featureContract)
+    if (!qualification.eligible) {
+      return { task, result, qualification, grading: null }
+    }
+
+    startGrading()
+    const graderCandidate: GraderCandidate = {
+      candidateId: task.candidateId,
+      candidateIndex: task.index,
+      brief: task.brief,
+      model: input.model,
+      application: result.application,
+      qualification,
+      usage: result.usage,
+    }
+    const grading = await gradeCandidate(graderCandidate, { prompt: input.prompt, featureContract, signal: input.signal })
+    gradedCount += 1
+    input.onEvent({ type: 'variation_grading_progress', completedCount: gradedCount, totalCount: VARIATION_CANDIDATE_COUNT })
+    return { task, result, qualification, grading }
   })
 
-  const completed: Array<{ task: CandidateTask; result: CandidateResult }> = []
+  const completed: PipelinedEntry[] = []
   for (const [index, outcome] of settled.entries()) {
     const task = tasks[index]!
     if (outcome.status === 'fulfilled') {
-      completed.push({ task, result: outcome.value })
+      completed.push(outcome.value)
       continue
     }
     logger.warn('Variation candidate failed', {
@@ -176,34 +245,24 @@ export async function runVariationGeneration(input: VariationRunInput): Promise<
   }), { inputTokens: 0, outputTokens: 0, totalTokens: 0 })
 
   input.onEvent({ type: 'variation_validation_started', completedCount: completed.length })
-  const qualified = completed
-    .map((entry) => ({ ...entry, qualification: qualifyGeneratedApplication(entry.result.application, featureContract) }))
-    .filter((entry) => entry.qualification.eligible)
+  const qualified = completed.filter((entry) => entry.qualification.eligible)
   input.onEvent({ type: 'variation_validation_complete', eligibleCount: qualified.length })
 
   if (qualified.length < VARIATION_FINALIST_COUNT) {
     throw new InsufficientVariationCandidatesError()
   }
 
-  input.onEvent({ type: 'variation_grading_started', eligibleCount: qualified.length })
   const graderCandidates: GraderCandidate[] = qualified.map((entry) => ({
     candidateId: entry.task.candidateId,
     candidateIndex: entry.task.index,
     brief: entry.task.brief,
     model: input.model,
     application: entry.result.application,
-    qualification: entry.qualification as QualificationResult,
+    qualification: entry.qualification,
     usage: entry.result.usage,
   }))
-  const grading = await gradeVariations({
-    prompt: input.prompt,
-    featureContract,
-    candidates: graderCandidates,
-    signal: input.signal,
-    onProgress: (completedCount, totalCount) => {
-      input.onEvent({ type: 'variation_grading_progress', completedCount, totalCount })
-    },
-  })
+  const gradingResults = qualified.map((entry) => entry.grading!)
+  const grading = rankGradedCandidates(graderCandidates, gradingResults)
   input.onEvent({ type: 'variation_grading_complete', gradingMode: grading.gradingMode })
 
   const byCandidateId = new Map(qualified.map((entry) => [entry.task.candidateId, entry]))
@@ -223,6 +282,8 @@ export async function runVariationGeneration(input: VariationRunInput): Promise<
         scoreBreakdown: ranked.scoreBreakdown,
         model: input.model,
         usage: entry.result.usage,
+        brief: entry.task.brief,
+        rubric: ranked.rubric,
       } satisfies VariationFinalist
     })
 

@@ -98,6 +98,12 @@ const variationState = computed(() => variationGeneration.state.value)
 const variationError = computed(() => variationGeneration.error.value)
 const isVariationActive = computed(() => variationGeneration.isActive.value)
 const variationFinalists = computed(() => variationGeneration.finalists.value)
+const variationMeta = computed(() => {
+  const state = variationState.value
+  return state.mode === 'variations-ready' || state.mode === 'variation-selecting'
+    ? { gradingMode: state.gradingMode, requestedCount: state.requestedCount, eligibleCount: state.eligibleCount }
+    : {}
+})
 const MonacoDiffEditor = defineAsyncComponent({
   loader: () => import('@guolao/vue-monaco-editor').then((module) => module.VueMonacoDiffEditor),
   loadingComponent: { template: '<div class="editor-empty">Loading editor...</div>' },
@@ -1410,6 +1416,9 @@ defineExpose({
           :error="variationError || bridgeError"
           :bridge-enabled="highLevelStore.connection.connected"
           :active-response="mobilePanel === 'preview' ? 2 : 1"
+          :grading-mode="variationMeta.gradingMode"
+          :requested-count="variationMeta.requestedCount"
+          :eligible-count="variationMeta.eligibleCount"
           @select="chooseFinalist"
           @open-preview="openVariationPreviewInNewTab"
         />

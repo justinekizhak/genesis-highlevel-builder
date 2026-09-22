@@ -1,5 +1,6 @@
 import { highLevelApiBase, highLevelApiVersion } from './config.js'
 import { getValidConnection } from './tokens.js'
+import { timeOperation } from '../shared/telemetry.js'
 
 type ParameterValue = string | number | boolean | string[] | undefined
 export type HighLevelParameters = Record<string, ParameterValue>
@@ -115,7 +116,7 @@ export async function executeHighLevelOperation(uid: string, operation: HighLeve
   const unknown = Object.keys(parameters).filter((key) => !permitted.has(key))
   if (unknown.length) throw new Error(`Unsupported parameters: ${unknown.join(', ')}.`)
 
-  const connection = await getValidConnection(uid)
+  const connection = await timeOperation('highlevel.getValidConnection', { uid, operation }, () => getValidConnection(uid))
   const url = new URL(path, highLevelApiBase.value())
   if (definition.location === 'query') url.searchParams.set('locationId', connection.locationId)
   for (const key of definition.allowedQuery ?? []) {
@@ -130,7 +131,7 @@ export async function executeHighLevelOperation(uid: string, operation: HighLeve
     if (value !== undefined && value !== '') body[key] = value
   }
 
-  const response = await fetch(url, {
+  const response = await timeOperation('highlevel.request', { operation, method: definition.method, path: definition.path }, () => fetch(url, {
     method: definition.method,
     headers: {
       Authorization: `Bearer ${connection.accessToken}`,
@@ -139,7 +140,7 @@ export async function executeHighLevelOperation(uid: string, operation: HighLeve
       ...(definition.allowedBody ? { 'Content-Type': 'application/json' } : {}),
     },
     body: definition.allowedBody ? JSON.stringify(body) : undefined,
-  })
+  }))
   const responseBody = await response.json().catch(() => ({ message: 'HighLevel returned a non-JSON response.' }))
   if (!response.ok) throw new Error(`HighLevel request failed (${response.status}): ${JSON.stringify(responseBody)}`)
   return responseBody

@@ -9,11 +9,11 @@ import {
 } from './variation-orchestrator.js'
 import type { GenerationPlan, VariationBrief } from './variation-types.js'
 
-const { gradeVariations } = vi.hoisted(() => ({ gradeVariations: vi.fn() }))
+const { gradeCandidate } = vi.hoisted(() => ({ gradeCandidate: vi.fn() }))
 
 vi.mock('./variation-grader.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./variation-grader.js')>()
-  return { ...actual, gradeVariations }
+  return { ...actual, gradeCandidate }
 })
 
 const vueTag = '<script src="https://cdn.jsdelivr.net/npm/vue@3.5.20/dist/vue.global.prod.js"></script>'
@@ -78,17 +78,26 @@ beforeEach(() => {
     application: validCandidate(`variant-${index}`),
     usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
   }))
-  gradeVariations.mockReset()
-  gradeVariations.mockImplementation(async ({ candidates }: { candidates: Array<{ candidateId: string }> }) => ({
-    gradingMode: 'full',
-    ranked: candidates.map((candidate, index) => ({
-      alias: `alias-${index}`,
-      candidateId: candidate.candidateId,
-      internalRank: index + 1,
-      rubricScore: 90 - index,
-      scoreBreakdown: { featureFidelity: 28 },
-      standout: 'Keeps the contact list visible while editing a record.',
-    })),
+  gradeCandidate.mockReset()
+  gradeCandidate.mockImplementation(async (candidate: { candidateId: string; candidateIndex: number }) => ({
+    candidateId: candidate.candidateId,
+    graded: true,
+    score: {
+      alias: `alias-${candidate.candidateIndex}`,
+      rubric: {
+        alias: `alias-${candidate.candidateIndex}`,
+        featureFidelity: 30 - candidate.candidateIndex,
+        functionalCorrectness: 20,
+        robustness: 12,
+        usability: 8,
+        accessibility: 8,
+        responsiveness: 4,
+        maintainability: 4,
+        standout: 'Keeps the contact list visible while editing a record.',
+        evidence: [],
+      },
+      deterministicScore: 80,
+    },
   }))
 })
 
@@ -207,7 +216,11 @@ describe('runVariationGeneration', () => {
       usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     }))
     await expect(runVariationGeneration(input())).rejects.toThrow(InsufficientVariationCandidatesError)
-    expect(gradeVariations).not.toHaveBeenCalled()
+    // Grading starts per candidate as soon as it individually qualifies, before the whole batch is
+    // known to be short on eligible candidates — so the one candidate that did qualify (index 0)
+    // still gets graded, even though the run is ultimately discarded.
+    expect(gradeCandidate).toHaveBeenCalledTimes(1)
+    expect(gradeCandidate.mock.calls[0]![0].candidateIndex).toBe(0)
   })
 
   it('aborts queued candidates when the user cancels', async () => {
@@ -220,11 +233,35 @@ describe('runVariationGeneration', () => {
     expect(generateCandidate.mock.calls.length).toBeLessThan(4)
   })
 
-  it('never lets a variation brief reach the grader input', async () => {
+  it('grades every qualifying candidate with the shared prompt and feature contract', async () => {
     await runVariationGeneration(input())
-    const graderInput = gradeVariations.mock.calls[0]?.[0]
-    expect(graderInput.prompt).toBe('Show me a few directions for a contact dashboard')
-    expect(graderInput.featureContract).toEqual(plan.featureContract)
-    expect(graderInput.candidates).toHaveLength(4)
+    expect(gradeCandidate).toHaveBeenCalledTimes(4)
+    for (const call of gradeCandidate.mock.calls) {
+      const context = call[1] as { prompt: string; featureContract: unknown }
+      expect(context.prompt).toBe('Show me a few directions for a contact dashboard')
+      expect(context.featureContract).toEqual(plan.featureContract)
+    }
+  })
+
+  it('starts grading a candidate before every sibling has finished generating', async () => {
+    const gates = [deferred(), deferred(), deferred(), deferred()]
+    let taken = 0
+    generateCandidate.mockImplementation(async ({ index }: { index: number }) => {
+      if (index === 0) return { application: validCandidate('fast'), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }
+      await gates[taken++]!.promise
+      return { application: validCandidate(`slow-${index}`), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 } }
+    })
+
+    const pending = runVariationGeneration(input())
+    // Let candidate 0's generate -> validate -> grade chain run to completion while its three
+    // siblings are still awaiting their gates.
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(gradeCandidate).toHaveBeenCalledTimes(1)
+    for (const gate of gates) gate.resolve()
+    await pending
+    expect(gradeCandidate).toHaveBeenCalledTimes(4)
   })
 })

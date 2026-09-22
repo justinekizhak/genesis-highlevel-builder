@@ -1,6 +1,13 @@
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore'
 import { GenerationLockedError, isGenerationLockStale, requireOwnedProject } from './persistence.js'
-import { VARIATION_CANDIDATE_COUNT, VARIATION_FINALIST_COUNT, type GradingMode, type TokenUsage } from './variation-types.js'
+import {
+  VARIATION_CANDIDATE_COUNT,
+  VARIATION_FINALIST_COUNT,
+  type GradingMode,
+  type RubricScore,
+  type TokenUsage,
+  type VariationBrief,
+} from './variation-types.js'
 import type { VariationDisplayName } from '../shared/protocol.js'
 
 export class VariationSelectionConflictError extends Error {
@@ -19,6 +26,8 @@ export type PersistableFinalist = {
   scoreBreakdown: Record<string, number>
   model: string
   usage: TokenUsage
+  brief: VariationBrief
+  rubric?: RubricScore
 }
 
 export type PersistVariationFinalistsInput = {
@@ -41,6 +50,10 @@ export type VariationFinalistPayload = {
   summary: string
   files: Record<string, string>
   standout: string
+  internalRank?: number
+  scoreBreakdown?: Record<string, number>
+  brief?: VariationBrief
+  rubric?: RubricScore
 }
 
 export type VariationSetPayload = {
@@ -51,6 +64,8 @@ export type VariationSetPayload = {
   baseSnapshotId?: string
   initialSelectedCandidateId?: string
   activeCandidateId?: string
+  requestedCount: number
+  eligibleCount: number
   finalists: VariationFinalistPayload[]
 }
 
@@ -97,6 +112,8 @@ export async function persistVariationFinalists(input: PersistVariationFinalists
       scoreBreakdown: finalist.scoreBreakdown,
       model: finalist.model,
       usage: finalist.usage,
+      brief: finalist.brief,
+      ...(finalist.rubric ? { rubric: finalist.rubric } : {}),
       createdAt: now,
     })
   }
@@ -131,14 +148,20 @@ export async function loadVariationSet(uid: string, projectId: string, variation
     baseSnapshotId: set.get('baseSnapshotId') as string | undefined,
     initialSelectedCandidateId: set.get('initialSelectedCandidateId') as string | undefined,
     activeCandidateId: set.get('activeCandidateId') as string | undefined,
-    // Internal rank and score breakdowns stay server-side: the comparison is deliberately
-    // equal-weight and shows no raw scores or recommendation.
+    requestedCount: (set.get('requestedCount') as number) ?? VARIATION_CANDIDATE_COUNT,
+    eligibleCount: (set.get('eligibleCount') as number) ?? candidates.size,
+    // The default comparison view stays equal-weight; rank, scores, brief, and rubric are exposed
+    // here so an "advanced" view can prove grading actually happened, but nothing hides them.
     finalists: candidates.docs.map((document) => ({
       candidateId: document.id,
       displayName: document.get('displayName') as VariationDisplayName,
       summary: (document.get('summary') as string) ?? '',
       files: (document.get('files') as Record<string, string>) ?? {},
       standout: (document.get('standout') as string) ?? '',
+      internalRank: document.get('internalRank') as number | undefined,
+      scoreBreakdown: document.get('scoreBreakdown') as Record<string, number> | undefined,
+      brief: document.get('brief') as VariationBrief | undefined,
+      rubric: document.get('rubric') as RubricScore | undefined,
     })),
   }
 }
