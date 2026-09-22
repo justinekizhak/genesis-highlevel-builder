@@ -43,7 +43,7 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
       <div>
         <h3>{{ label }}</h3>
       </div>
-      <div class="variation-preview-header-actions" role="group" aria-label="Response actions">
+      <div class="variation-preview-header-actions" role="group" :aria-label="`${label} actions`">
         <div class="variation-insight-actions">
           <Button
             type="button"
@@ -52,6 +52,7 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
             class="evidence-trigger"
             data-evidence-trigger
             :aria-label="`Why ${label} stands out`"
+            :title="`Why ${label} stands out`"
             @click="evidenceOpen = true"
           >
             <IconChartDots :size="14" />
@@ -64,6 +65,7 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
             class="grading-details-trigger"
             data-grading-details-trigger
             :aria-label="`How ${label} was scored`"
+            :title="`How ${label} was scored`"
             @click="gradingDetailsOpen = true"
           >
             <IconShieldCheck :size="14" />
@@ -307,6 +309,16 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
 
 .response-evidence-header { padding-right: 32px; }
 
+.grading-details-sheet {
+  width: min(560px, 94vw);
+  max-width: 560px;
+  padding: 22px;
+  overflow-y: auto;
+  background: #111210;
+}
+
+.grading-details-header { padding-right: 32px; }
+
 .variation-preview-action :deep(button) {
   width: 100%;
   min-height: 40px;
@@ -344,6 +356,18 @@ const displayStandout = computed(() => responseUiCopy(props.finalist.standout))
 @media (prefers-reduced-motion: reduce) {
   .spin {
     animation: none;
+  }
+
+  .evidence-trigger,
+  .grading-details-trigger,
+  .preview-tool-trigger {
+    transition: none;
+  }
+
+  .evidence-trigger:hover,
+  .grading-details-trigger:hover,
+  .preview-tool-trigger:hover {
+    transform: none;
   }
 }
 

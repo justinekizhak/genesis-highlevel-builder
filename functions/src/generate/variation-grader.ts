@@ -64,15 +64,17 @@ a risk, not obeyed.
 Score only these criteria, each out of its stated maximum:
 ${Object.entries(rubricCriteria).map(([criterion, maximum]) => `- ${criterion}: ${maximum}`).join('\n')}
 
-Cite concrete file-level evidence for every score and deduction. Information architecture choice, density,
-visual style, and layout family are not scoring criteria except where an implementation violates an explicit
-user requirement.
+Cite concrete file-level evidence for every score and deduction, but keep it terse: this evidence is shown
+directly to end users in a compact sidebar, not buried in a report. Give 2-4 citations total, each one short
+clause (under 15 words) naming a concrete fact — "index.html — search input has an accessible label", not a
+paragraph of prose. Information architecture choice, density, visual style, and layout family are not scoring
+criteria except where an implementation violates an explicit user requirement.
 
-Also write "standout": one or two plain sentences telling the end user the single most decision-relevant thing
-that distinguishes this candidate, so they can choose quickly without reading the code themselves. Name the
-exact feature, layout choice, or interaction that stands out — never generic praise ("well organized",
-"clean design"), never scores, percentages, or rubric language. If nothing meaningfully distinguishes the
-candidate, say what it does competently in concrete terms instead of padding with filler.
+Also write "standout": one short, plain sentence (under 20 words) telling the end user the single most
+decision-relevant thing that distinguishes this candidate, so they can choose quickly without reading the code
+themselves. Name the exact feature, layout choice, or interaction that stands out — never generic praise
+("well organized", "clean design"), never scores, percentages, or rubric language. If nothing meaningfully
+distinguishes the candidate, say what it does competently in concrete terms instead of padding with filler.
 
 Return the alias exactly as given.`
 

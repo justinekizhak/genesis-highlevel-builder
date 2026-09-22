@@ -25,12 +25,12 @@ export type FeatureContract = z.infer<typeof featureContractSchema>
 export const variationBriefSchema = z.object({
   id: z.string().trim().min(1).max(40),
   title: z.string().trim().min(1).max(80),
-  designIntent: z.string().trim().min(1).max(400),
-  informationArchitecture: z.string().trim().min(1).max(240),
-  interactionModel: z.string().trim().min(1).max(240),
-  visualDirection: z.string().trim().min(1).max(240),
+  designIntent: z.string().trim().min(1).max(180),
+  informationArchitecture: z.string().trim().min(1).max(130),
+  interactionModel: z.string().trim().min(1).max(130),
+  visualDirection: z.string().trim().min(1).max(130),
   density: z.enum(['compact', 'balanced', 'spacious']),
-  differentiators: z.array(z.string().trim().min(1).max(180)).min(3).max(6),
+  differentiators: z.array(z.string().trim().min(1).max(90)).min(3).max(6),
 }).strict()
 
 export type VariationBrief = z.infer<typeof variationBriefSchema>
@@ -87,12 +87,37 @@ export const generationPlanJsonSchema = {
         properties: {
           id: { type: 'string', maxLength: 40 },
           title: { type: 'string', maxLength: 80 },
-          designIntent: { type: 'string', maxLength: 400 },
-          informationArchitecture: { type: 'string', maxLength: 240 },
-          interactionModel: { type: 'string', maxLength: 240 },
-          visualDirection: { type: 'string', maxLength: 240 },
+          designIntent: {
+            type: 'string',
+            maxLength: 180,
+            description: 'One concise sentence naming the core idea — not a paragraph.',
+          },
+          informationArchitecture: {
+            type: 'string',
+            maxLength: 130,
+            description: 'A short phrase naming the layout structure, e.g. "three-panel dashboard with a persistent sidebar".',
+          },
+          interactionModel: {
+            type: 'string',
+            maxLength: 130,
+            description: 'A short phrase naming how the user interacts, e.g. "inline editing with autosave".',
+          },
+          visualDirection: {
+            type: 'string',
+            maxLength: 130,
+            description: 'A short phrase naming the visual style, e.g. "flat, high-contrast, generous whitespace".',
+          },
           density: { type: 'string', enum: ['compact', 'balanced', 'spacious'] },
-          differentiators: { type: 'array', minItems: 3, maxItems: 6, items: { type: 'string', maxLength: 180 } },
+          differentiators: {
+            type: 'array',
+            minItems: 3,
+            maxItems: 6,
+            items: {
+              type: 'string',
+              maxLength: 90,
+              description: 'A short fragment (≤12 words) naming one thing that sets this direction apart — not a full sentence.',
+            },
+          },
         },
       },
     },
@@ -129,8 +154,8 @@ export const rubricSchema = z.object({
   accessibility: z.number().int().min(0).max(10),
   responsiveness: z.number().int().min(0).max(5),
   maintainability: z.number().int().min(0).max(5),
-  standout: z.string().trim().min(1).max(220),
-  evidence: z.array(z.object({ path: evidencePathSchema, detail: z.string().max(200) })).max(6),
+  standout: z.string().trim().min(1).max(160),
+  evidence: z.array(z.object({ path: evidencePathSchema, detail: z.string().max(110) })).max(4),
 }).strict()
 
 export type RubricScore = z.infer<typeof rubricSchema>
@@ -166,21 +191,26 @@ export const rubricJsonSchema = {
     ...rubricJsonProperties,
     standout: {
       type: 'string',
-      maxLength: 220,
-      description: 'One or two plain sentences telling the end user the single most decision-relevant thing '
-        + 'that distinguishes this candidate, so they can choose quickly. Name the exact feature, layout choice, '
-        + 'or interaction — never generic praise, never scores or rubric language.',
+      maxLength: 160,
+      description: 'One short, plain sentence (≤20 words) telling the end user the single most decision-relevant '
+        + 'thing that distinguishes this candidate, so they can choose quickly. Name the exact feature, layout '
+        + 'choice, or interaction — never generic praise, never scores or rubric language.',
     },
     evidence: {
       type: 'array',
-      maxItems: 6,
+      maxItems: 4,
+      description: 'Two to four short citations, each one concrete fact — not a running commentary.',
       items: {
         type: 'object',
         additionalProperties: false,
         required: ['path', 'detail'],
         properties: {
           path: { type: 'string', enum: ['index.html', 'styles.css', 'app.js'] },
-          detail: { type: 'string', maxLength: 200 },
+          detail: {
+            type: 'string',
+            maxLength: 110,
+            description: 'One short clause (≤15 words) naming the concrete implementation fact — not a full sentence of prose.',
+          },
         },
       },
     },

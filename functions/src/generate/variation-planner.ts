@@ -50,6 +50,11 @@ describe a brief as better, safer, more complete, or more likely to win. Never a
 request does not support. Every direction must be implementable as exactly index.html, styles.css, and app.js in
 the existing Vue runtime.
 
+Every brief field is shown directly to end users in a compact sidebar, not read as a report — write short
+phrases and fragments, not paragraphs. designIntent is one concise sentence; informationArchitecture,
+interactionModel, and visualDirection are each a short phrase (under 15 words); each differentiator is a
+fragment (under 12 words) naming one concrete thing, not a full sentence.
+
 confidence is your calibrated certainty, from 0 to 1, that the chosen mode matches the user's intent.`
 
 function buildPlannerInput(prompt: string, context?: GenerationContext) {
