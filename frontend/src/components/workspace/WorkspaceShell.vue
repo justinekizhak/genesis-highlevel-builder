@@ -117,7 +117,8 @@ const messages = ref<ChatMessage[]>([
   },
 ])
 const variationActivityItems = ref<VariationActivityItem[]>([])
-const lastVariationChoice = ref<{ variationSetId: string; responseNumber: number }>()
+const lastVariationChoice = ref<{ variationSetId: string; responseNumber: number; afterMessageId: string }>()
+const pendingPromptMessageId = ref<string>()
 const prompt = ref('')
 const selectedModel = ref<GenerationModel>('gpt-5.4-mini')
 const isLoadingProject = ref(true)
@@ -778,7 +779,11 @@ async function chooseFinalist(candidateId: string) {
   hydrateFiles(result.files)
   currentSnapshotId.value = result.snapshotId
   if (comparison && responseNumber > 0) {
-    lastVariationChoice.value = { variationSetId: comparison.variationSetId, responseNumber }
+    lastVariationChoice.value = {
+      variationSetId: comparison.variationSetId,
+      responseNumber,
+      afterMessageId: pendingPromptMessageId.value ?? messages.value.at(-1)?.id ?? '',
+    }
   }
   variationGeneration.reset()
   variationActivityItems.value = []
@@ -815,7 +820,9 @@ async function submitPrompt(suggestion?: string) {
   showInlineDiff.value = false
   streamingFilePath.value = undefined
   isGenerating.value = true
-  messages.value.push({ id: crypto.randomUUID(), role: 'user', content: value })
+  const promptMessageId = crypto.randomUUID()
+  messages.value.push({ id: promptMessageId, role: 'user', content: value })
+  pendingPromptMessageId.value = promptMessageId
   filesBeforeGeneration = cloneFiles(files.value)
   controller = new AbortController()
   currentGenerationId.value = crypto.randomUUID()
@@ -1050,18 +1057,38 @@ defineExpose({
         </div>
 
         <div ref="messagesContainer" class="messages" aria-live="polite">
-          <article v-for="message in messages" :key="message.id" class="message" :class="message.role">
-            <span>{{ message.role === 'assistant' ? 'Genesis' : 'You' }}</span>
-            <div
-              v-if="message.role === 'assistant' && !isMessageTyping(message)"
-              class="message-markdown"
-              v-html="renderedMessageHtml(message)"
-            />
-            <p v-else>{{ messageText(message) }}<i v-if="isMessageTyping(message)" class="typing-cursor" /></p>
-            <span v-if="message.usage" class="message-usage" :title="`${message.usage.inputTokens.toLocaleString()} input tokens, ${message.usage.outputTokens.toLocaleString()} output tokens`">
-              {{ formatTokenCount(message.usage.inputTokens) }} in · {{ formatTokenCount(message.usage.outputTokens) }} out
-            </span>
-          </article>
+          <template v-for="message in messages" :key="message.id">
+            <article class="message" :class="message.role">
+              <span>{{ message.role === 'assistant' ? 'Genesis' : 'You' }}</span>
+              <div
+                v-if="message.role === 'assistant' && !isMessageTyping(message)"
+                class="message-markdown"
+                v-html="renderedMessageHtml(message)"
+              />
+              <p v-else>{{ messageText(message) }}<i v-if="isMessageTyping(message)" class="typing-cursor" /></p>
+              <span v-if="message.usage" class="message-usage" :title="`${message.usage.inputTokens.toLocaleString()} input tokens, ${message.usage.outputTokens.toLocaleString()} output tokens`">
+                {{ formatTokenCount(message.usage.inputTokens) }} in · {{ formatTokenCount(message.usage.outputTokens) }} out
+              </span>
+            </article>
+
+            <article
+              v-if="!isVariationActive && lastVariationChoice && lastVariationChoice.afterMessageId === message.id"
+              class="message assistant comparison-revisit-message"
+            >
+              <span>Genesis</span>
+              <div class="comparison-revisit-card">
+                <strong>Response {{ lastVariationChoice.responseNumber }} is active</strong>
+                <p>You can reopen both generated responses without changing the current app.</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  data-reopen-comparison
+                  @click="openVariationComparison({ variationSetId: lastVariationChoice.variationSetId })"
+                >Compare responses again</Button>
+              </div>
+            </article>
+          </template>
 
           <article v-if="isVariationActive && variationActivityItems.length" class="message assistant variation-activity-message" data-variation-activity>
             <span>Genesis</span>
@@ -1073,21 +1100,6 @@ defineExpose({
                   <span>{{ item.label }}</span>
                 </li>
               </ol>
-            </div>
-          </article>
-
-          <article v-if="!isVariationActive && lastVariationChoice" class="message assistant comparison-revisit-message">
-            <span>Genesis</span>
-            <div class="comparison-revisit-card">
-              <strong>Response {{ lastVariationChoice.responseNumber }} is active</strong>
-              <p>You can reopen both generated responses without changing the current app.</p>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                data-reopen-comparison
-                @click="openVariationComparison({ variationSetId: lastVariationChoice.variationSetId })"
-              >Compare responses again</Button>
             </div>
           </article>
 
