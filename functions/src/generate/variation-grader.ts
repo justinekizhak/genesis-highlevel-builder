@@ -3,11 +3,13 @@ import { defineString } from 'firebase-functions/params'
 import { logger } from 'firebase-functions'
 import type { GeneratedApplication } from './application.js'
 import { createStructuredResponse } from './openai.js'
+import { mapWithConcurrency } from './concurrency.js'
 import { qualifyGeneratedApplication, type QualificationResult } from './validate.js'
 import {
   rubricCriteria,
   rubricJsonSchema,
   rubricSchema,
+  VARIATION_CONCURRENCY,
   type CandidateScore,
   type FeatureContract,
   type GradingMode,
@@ -17,7 +19,9 @@ import {
   type VariationBrief,
 } from './variation-types.js'
 
-export const openAiVariationGraderModel = defineString('OPENAI_VARIATION_GRADER_MODEL', { default: 'gpt-5.4' })
+// Grading is a bounded-output scoring task against a fixed rubric, not open-ended generation,
+// so it defaults to the lighter model like the planner does; override via env if scores drift.
+export const openAiVariationGraderModel = defineString('OPENAI_VARIATION_GRADER_MODEL', { default: 'gpt-5.4-mini' })
 
 const GRADER_ATTEMPTS = 2
 
@@ -131,9 +135,9 @@ async function gradeIndependently(
   input: GradeVariationsInput,
   blinded: Array<ReturnType<typeof blindedCandidate>>,
 ): Promise<CandidateScore[]> {
-  const scores: CandidateScore[] = []
-  for (const entry of blinded) {
-    input.signal?.throwIfAborted()
+  let completedCount = 0
+  const signal = input.signal ?? new AbortController().signal
+  const settled = await mapWithConcurrency(blinded, VARIATION_CONCURRENCY, signal, async (entry) => {
     const text = await createStructuredResponse({
       model: openAiVariationGraderModel.value(),
       instructions: rubricPreamble,
@@ -151,10 +155,13 @@ async function gradeIndependently(
       signal: input.signal,
     })
     const rubric = rubricSchema.parse(JSON.parse(text))
-    scores.push({ alias: entry.alias, rubric: { ...rubric, alias: entry.alias }, deterministicScore: 0 })
-    input.onProgress?.(scores.length, blinded.length)
-  }
-  return scores
+    completedCount += 1
+    input.onProgress?.(completedCount, blinded.length)
+    return { alias: entry.alias, rubric: { ...rubric, alias: entry.alias }, deterministicScore: 0 } satisfies CandidateScore
+  })
+  const failure = settled.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (failure) throw failure.reason
+  return settled.map((result) => (result as PromiseFulfilledResult<CandidateScore>).value)
 }
 
 function deterministicRanking(

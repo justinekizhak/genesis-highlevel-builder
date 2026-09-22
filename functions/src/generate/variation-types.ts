@@ -9,7 +9,7 @@ import { z } from 'zod'
 
 export const VARIATION_CANDIDATE_COUNT = 4
 export const VARIATION_FINALIST_COUNT = 2
-export const VARIATION_CONCURRENCY = 2
+export const VARIATION_CONCURRENCY = VARIATION_CANDIDATE_COUNT
 export const VARIATION_CONFIDENCE_FLOOR = 0.8
 
 const boundedList = (max: number, itemMax: number) => z.array(z.string().trim().min(1).max(itemMax)).max(max)

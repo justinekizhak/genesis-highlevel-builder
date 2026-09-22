@@ -120,7 +120,7 @@ describe('mapWithConcurrency', () => {
 })
 
 describe('runVariationGeneration', () => {
-  it('never runs more than two candidate generations at once', async () => {
+  it('runs all four candidate generations at once', async () => {
     let active = 0
     let peak = 0
     const gates = [deferred(), deferred(), deferred(), deferred()]
@@ -136,10 +136,10 @@ describe('runVariationGeneration', () => {
     const pending = runVariationGeneration(input())
     await Promise.resolve()
     await Promise.resolve()
-    expect(active).toBe(2)
+    expect(active).toBe(4)
     for (const gate of gates) gate.resolve()
     await pending
-    expect(peak).toBe(2)
+    expect(peak).toBe(4)
     expect(generateCandidate).toHaveBeenCalledTimes(4)
   })
 

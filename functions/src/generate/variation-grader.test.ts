@@ -172,7 +172,9 @@ describe('grader resilience', () => {
     createMock.mockReset()
     createMock.mockRejectedValue(new Error('unavailable'))
     const result = await gradeVariations({ prompt: 'Build contacts', featureContract, candidates, signal })
-    expect(createMock).toHaveBeenCalledTimes(2)
+    // Grading now fans out all candidates in parallel per attempt (a failed sibling no longer
+    // cancels the others), so two attempts over four candidates is 8 calls, not 2.
+    expect(createMock).toHaveBeenCalledTimes(8)
     expect(result.gradingMode).toBe('deterministic_fallback')
     expect(result.ranked).toHaveLength(4)
   })

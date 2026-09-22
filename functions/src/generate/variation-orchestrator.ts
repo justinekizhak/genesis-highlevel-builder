@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { logger } from 'firebase-functions'
 import type { GeneratedApplication } from './application.js'
+import { mapWithConcurrency } from './concurrency.js'
 import { generateWithOpenAi } from './openai.js'
 import type { GenerationContext } from './persistence.js'
 import { StructuredApplicationStream } from './structured-stream.js'
@@ -73,29 +74,10 @@ export type VariationRunInput = {
 
 const phaseForPath = { 'index.html': 'markup', 'styles.css': 'styles', 'app.js': 'logic' } as const
 
-/**
- * Bounded worker pool. Results keep input order and failures are captured rather than thrown, so
- * one failed candidate never cancels a viable sibling; only an abort stops the pool.
- */
-export async function mapWithConcurrency<T, R>(
-  values: readonly T[],
-  concurrency: number,
-  signal: AbortSignal,
-  worker: (value: T, index: number) => Promise<R>,
-): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(values.length)
-  let cursor = 0
-  const runners = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
-    while (cursor < values.length) {
-      signal.throwIfAborted()
-      const index = cursor++
-      try { results[index] = { status: 'fulfilled', value: await worker(values[index]!, index) } }
-      catch (reason) { results[index] = { status: 'rejected', reason } }
-    }
-  })
-  await Promise.all(runners)
-  return results
-}
+// Re-exported so existing callers/tests that imported the pool from here keep working; the
+// implementation now lives in concurrency.js so variation-grader.ts can use it too without a
+// circular import back through this module.
+export { mapWithConcurrency }
 
 /**
  * Real candidate generation. The structured stream is consumed for coarse phase milestones only —
